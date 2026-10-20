@@ -71,6 +71,8 @@ final class CameraController: NSObject, ObservableObject {
     private var requestedAperture: Float?
     private var currentApertureSupport: VariableAperture.Support?
     private var apertureObservation: NSKeyValueObservation?
+    /// 由 setAperture 第一次调用打开；安全模式下保持关闭
+    private var apertureEnabled = false
 
     var currentDevice: AVCaptureDevice? { input?.device }
 
@@ -189,7 +191,8 @@ final class CameraController: NSObject, ObservableObject {
             if connection.isVideoMirroringSupported { connection.isVideoMirrored = false }
         }
 
-        let support = isDual ? nil : VariableAperture.support(for: device)
+        // 安全模式（或 Camera Control 未初始化）下不启用可变光圈
+        let support = isDual || !apertureEnabled ? nil : VariableAperture.support(for: device)
         currentApertureSupport = support
         installControls(for: device)
 
@@ -233,7 +236,23 @@ final class CameraController: NSObject, ObservableObject {
 
     // MARK: Camera Control
 
-    /// 创建 Camera Control 的控件：焦段、曝光补偿（系统滑块）、色彩。选择结果在主线程回调。
+    /// 执行可能抛 Objective-C 异常的 AVFoundation 调用；失败时记录下来而不是闪退
+    @discardableResult
+    func guarded(_ what: String, _ body: () -> Void) -> Bool {
+        do {
+            try IPANObjC.tryBlock(body)
+            return true
+        } catch {
+            print("[iPAN] \(what) 失败：\(error.localizedDescription)")
+            DispatchQueue.main.async { self.lastError = "\(what)：\(error.localizedDescription)" }
+            return false
+        }
+    }
+
+    /// 创建 Camera Control 的控件：焦段、曝光补偿（系统滑块）、色彩、光圈。
+    ///
+    /// 苹果要求控件的值（selectedIndex）只能在 setActionQueue 指定的队列上修改，否则抛异常。
+    /// 所以所有选择器都以 sessionQueue 为 action 队列（本类对控件的读写全在 sessionQueue），回调再切到主线程。
     func setupCameraControls(focalTitles: [String], focalIndex: Int, lookTitles: [String], lookIndex: Int,
                              onFocal: @escaping (Int) -> Void, onLook: @escaping (Int) -> Void,
                              onAperture: @escaping (Float?) -> Void) {
@@ -241,64 +260,70 @@ final class CameraController: NSObject, ObservableObject {
             self.onApertureControl = onAperture
             guard self.session.supportsControls else { return }
             let focal = AVCaptureIndexPicker("焦段", symbolName: "camera.aperture", localizedIndexTitles: focalTitles)
-            focal.selectedIndex = focalIndex
-            focal.setActionQueue(.main) { onFocal($0) }
+            focal.setActionQueue(self.sessionQueue) { index in DispatchQueue.main.async { onFocal(index) } }
             let look = AVCaptureIndexPicker("色彩", symbolName: "camera.filters", localizedIndexTitles: lookTitles)
-            look.selectedIndex = lookIndex
-            look.setActionQueue(.main) { onLook($0) }
+            look.setActionQueue(self.sessionQueue) { index in DispatchQueue.main.async { onLook(index) } }
+            self.guarded("初始化相机控制") {
+                if (0..<focalTitles.count).contains(focalIndex) { focal.selectedIndex = focalIndex }
+                if (0..<lookTitles.count).contains(lookIndex) { look.selectedIndex = lookIndex }
+            }
             self.focalPicker = focal
             self.lookPicker = look
             // 系统只有在设置了 controls delegate 后才会展示控件
-            self.session.setControlsDelegate(self, queue: .main)
+            guard self.guarded("设置相机控制代理", { self.session.setControlsDelegate(self, queue: .main) }) else { return }
             self.session.beginConfiguration()
             self.installControls(for: self.currentDevice)
             self.session.commitConfiguration()
         }
     }
 
+    private func addControl(_ control: AVCaptureControl) -> Bool {
+        guard !session.controls.contains(where: { $0 === control }) else { return true }
+        guard session.canAddControl(control) else { return false }
+        return guarded("添加相机控制") { session.addControl(control) }
+    }
+
     /// 在 sessionQueue、begin/commitConfiguration 之间调用。
-    /// 曝光滑块绑定具体镜头，换镜头时只替换它；两个选择器保持不动，避免正在操作的控件被移除。
+    /// 曝光滑块绑定具体镜头，换镜头时只替换它；选择器保持不动，避免正在操作的控件被移除。
     private func installControls(for device: AVCaptureDevice?) {
         guard session.supportsControls, let focalPicker, let lookPicker else { return }
         if let old = exposureSlider, session.controls.contains(where: { $0 === old }) {
-            session.removeControl(old)
+            guarded("移除曝光控制") { session.removeControl(old) }
         }
         exposureSlider = nil
-        for picker in [focalPicker, lookPicker] where !session.controls.contains(where: { $0 === picker }) {
-            if session.canAddControl(picker) { session.addControl(picker) }
-        }
+        _ = addControl(focalPicker)
+        _ = addControl(lookPicker)
         installAperturePicker()
         if let device {
             let slider = AVCaptureSystemExposureBiasSlider(device: device)
-            if session.canAddControl(slider) {
-                session.addControl(slider)
-                exposureSlider = slider
-            }
+            if addControl(slider) { exposureSlider = slider }
         }
     }
 
     /// 光圈选择器：第一次遇到支持可变光圈的镜头时创建；换到不支持的镜头（长焦）时禁用
     private func installAperturePicker() {
         guard let support = currentApertureSupport else {
-            aperturePicker?.isEnabled = false
+            if let picker = aperturePicker { guarded("禁用光圈控制") { picker.isEnabled = false } }
             return
         }
         if aperturePicker == nil {
             let titles = ["自动"] + support.stops.map { "f/" + VariableAperture.label($0) }
             let picker = AVCaptureIndexPicker("光圈", symbolName: "camera.aperture", localizedIndexTitles: titles)
             let stops = support.stops
-            picker.setActionQueue(.main) { [weak self] index in
+            picker.setActionQueue(sessionQueue) { [weak self] index in
                 let value: Float? = index > 0 && index <= stops.count ? stops[index - 1] : nil
-                self?.onApertureControl?(value)
+                let callback = self?.onApertureControl
+                DispatchQueue.main.async { callback?(value) }
             }
             aperturePicker = picker
         }
         guard let picker = aperturePicker else { return }
-        picker.isEnabled = true
-        picker.selectedIndex = apertureIndex(requestedAperture, support: support)
-        if !session.controls.contains(where: { $0 === picker }), session.canAddControl(picker) {
-            session.addControl(picker)
+        guarded("设置光圈控制") {
+            picker.isEnabled = true
+            let index = apertureIndex(requestedAperture, support: support)
+            if index < picker.numberOfIndexes { picker.selectedIndex = index }
         }
+        _ = addControl(picker)
     }
 
     private func apertureIndex(_ value: Float?, support: VariableAperture.Support) -> Int {
@@ -306,15 +331,17 @@ final class CameraController: NSObject, ObservableObject {
         return i + 1
     }
 
+    /// sessionQueue 上调用：修改选择器的选中项（必须在它的 action 队列，即 sessionQueue 上）
+    private func select(_ picker: AVCaptureIndexPicker?, index: Int?) {
+        guard let picker, let index, index >= 0, index < picker.numberOfIndexes, picker.selectedIndex != index else { return }
+        guarded("同步相机控制") { picker.selectedIndex = index }
+    }
+
     /// 界面上改动后同步 Camera Control 的选中项
     func syncControls(focalIndex: Int?, lookIndex: Int?) {
         sessionQueue.async {
-            if let focalIndex, let picker = self.focalPicker, picker.selectedIndex != focalIndex {
-                picker.selectedIndex = focalIndex
-            }
-            if let lookIndex, let picker = self.lookPicker, picker.selectedIndex != lookIndex {
-                picker.selectedIndex = lookIndex
-            }
+            self.select(self.focalPicker, index: focalIndex)
+            self.select(self.lookPicker, index: lookIndex)
         }
     }
 
@@ -323,14 +350,23 @@ final class CameraController: NSObject, ObservableObject {
     /// 设置光圈（nil = 自动）。换镜头后会自动重新应用；当前镜头不支持时只记住，不生效。
     func setAperture(_ value: Float?) {
         sessionQueue.async {
+            if !self.apertureEnabled, let device = self.currentDevice {
+                // 首次启用时补算当前镜头的光圈能力（配置可能早于这次调用）
+                self.apertureEnabled = true
+                self.currentApertureSupport = VariableAperture.support(for: device)
+                self.session.beginConfiguration()
+                self.installControls(for: device)
+                self.session.commitConfiguration()
+                self.observeAperture(of: device, support: self.currentApertureSupport)
+            }
+            self.apertureEnabled = true
             self.requestedAperture = value
             if let device = self.currentDevice, (try? device.lockForConfiguration()) != nil {
                 self.applyAperture(to: device)
                 device.unlockForConfiguration()
             }
-            if let picker = self.aperturePicker, let support = self.currentApertureSupport {
-                let index = self.apertureIndex(value, support: support)
-                if picker.selectedIndex != index { picker.selectedIndex = index }
+            if let support = self.currentApertureSupport {
+                self.select(self.aperturePicker, index: self.apertureIndex(value, support: support))
             }
         }
     }
@@ -339,7 +375,11 @@ final class CameraController: NSObject, ObservableObject {
     private func applyAperture(to device: AVCaptureDevice) {
         var locked: Float?
         if let support = currentApertureSupport {
-            if let value = requestedAperture, VariableAperture.lock(device, aperture: value, support: support) {
+            var ok = false
+            if let value = requestedAperture {
+                guarded("设置光圈") { ok = VariableAperture.lock(device, aperture: value, support: support) }
+            }
+            if let value = requestedAperture, ok {
                 locked = min(support.max, max(support.min, value))
             } else if device.exposureMode == .custom {
                 VariableAperture.unlock(device)

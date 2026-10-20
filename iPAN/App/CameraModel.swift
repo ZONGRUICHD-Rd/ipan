@@ -110,10 +110,28 @@ final class CameraModel: ObservableObject {
 
     // MARK: 生命周期
 
+    /// 连续两次启动后没能稳定运行（多半是闪退）时，进入安全模式：跳过 Camera Control 与可变光圈这类依赖新系统接口的功能
+    private static let unstableLaunchKey = "unstableLaunchCount"
+    private(set) var safeMode = false
+
     func start() {
+        let defaults = UserDefaults.standard
+        let unstable = defaults.integer(forKey: Self.unstableLaunchKey)
+        safeMode = unstable >= 2
+        defaults.set(unstable + 1, forKey: Self.unstableLaunchKey)
+        Task {
+            // 稳定运行 8 秒视为启动成功
+            try? await Task.sleep(for: .seconds(8))
+            UserDefaults.standard.set(0, forKey: Self.unstableLaunchKey)
+        }
+
         observeInterfaceOrientation()
-        setupCameraControls()
-        camera.setAperture(settings.aperture > 0 ? Float(settings.aperture) : nil)
+        if safeMode {
+            showToast("检测到上次启动异常，已暂时关闭 Camera Control 与光圈功能")
+        } else {
+            setupCameraControls()
+            camera.setAperture(settings.aperture > 0 ? Float(settings.aperture) : nil)
+        }
         camera.start(with: currentConfiguration)
         syncPreview()
     }
@@ -170,6 +188,7 @@ final class CameraModel: ObservableObject {
 
     /// nil = 自动。光圈优先：锁定光圈，快门与 ISO 自动。
     func setAperture(_ value: Float?, fromControl: Bool = false) {
+        guard !safeMode else { return }
         settings.aperture = Double(value ?? 0)
         camera.setAperture(value)
         if !fromControl { UISelectionFeedbackGenerator().selectionChanged() }
