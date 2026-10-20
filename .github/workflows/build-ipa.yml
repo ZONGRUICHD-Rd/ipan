@@ -51,13 +51,15 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             MARKETING_VERSION="$APP_VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            build | tee xcodebuild.log | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" || true
-          test -d build/Build/Products/Release-iphoneos/iPAN.app
+            build 2>&1 | tee xcodebuild.log | { grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true; }
+          # 构建失败时不能只看 .app 目录在不在（资源会先拷进去），必须确认可执行文件真的生成了
+          test -x build/Build/Products/Release-iphoneos/iPAN.app/iPAN
 
       - name: Package IPA
         run: |
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/iPAN.app Payload/
+          test -x Payload/iPAN.app/iPAN
           # 与 Xcode 导出 IPA 一样用 ditto 打包（文件名为 UTF-8 字节，中文模板名可正常安装）
           ditto -c -k --norsrc --keepParent Payload iPAN-unsigned.ipa
           cp iPAN-unsigned.ipa "iPAN-$APP_VERSION-unsigned.ipa"

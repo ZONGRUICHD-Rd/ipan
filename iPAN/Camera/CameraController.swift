@@ -240,7 +240,7 @@ final class CameraController: NSObject, ObservableObject {
     @discardableResult
     func guarded(_ what: String, _ body: () -> Void) -> Bool {
         do {
-            try IPANObjC.tryBlock(body)
+            try IPANObjC.catching(body)
             return true
         } catch {
             print("[iPAN] \(what) 失败：\(error.localizedDescription)")

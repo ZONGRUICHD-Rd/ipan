@@ -6,7 +6,8 @@ NS_ASSUME_NONNULL_BEGIN
 /// 导致闪退；用这个包一层，失败时转成 Swift 的 Error。
 @interface IPANObjC : NSObject
 
-+ (BOOL)tryBlock:(NS_NOESCAPE void (^)(void))block error:(NSError * _Nullable * _Nullable)error;
++ (BOOL)tryBlock:(NS_NOESCAPE void (^)(void))block error:(NSError * _Nullable * _Nullable)error
+    NS_SWIFT_NAME(catching(_:));
 
 @end
 
