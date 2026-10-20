@@ -21,6 +21,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          # Release 说明需要上一个 tag 以来的全部提交
+          fetch-depth: 0
 
       - name: Select Xcode 26
         run: |
@@ -80,8 +82,10 @@ jobs:
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
-          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
+          # 上一个 Release 以来的全部提交；第一次发布时列出全部提交
+          PREV_TAG=$(git describe --tags --match 'v*' --abbrev=0 HEAD 2>/dev/null || true)
+          RANGE=${PREV_TAG:+$PREV_TAG..}HEAD
           {
             echo "## iPAN $APP_VERSION"
             echo
@@ -89,10 +93,11 @@ jobs:
             echo "- 提交：${GITHUB_SHA}"
             echo "- 构建：Xcode $(xcodebuild -version | head -n 1 | awk '{print $2}')，未签名，安装前需自行签名"
             echo
-            echo "### 本次更改"
+            echo "### 本次更改${PREV_TAG:+（自 $PREV_TAG 起）}"
             echo
-            printf '%s\n' "${COMMIT_MESSAGE:-（手动触发构建）}" | grep -v -E '^(Co-Authored-By|Claude-Session):'
+            git log --no-merges --format='#### %s%n%n%b' "$RANGE" | grep -v -E '^(Co-Authored-By|Claude-Session):'
           } > release-notes.md
+          cat release-notes.md
           gh release create "v$APP_VERSION" "iPAN-$APP_VERSION-unsigned.ipa" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
