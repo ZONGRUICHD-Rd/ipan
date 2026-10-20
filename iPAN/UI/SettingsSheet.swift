@@ -19,7 +19,7 @@ struct SettingsSheet: View {
                     }
                     .pickerStyle(.segmented)
                     Toggle("XPan 暗角", isOn: $settings.vignette)
-                    Picker("竖握时输出", selection: $settings.portraitOutput) {
+                    Picker("竖屏窗口时输出", selection: $settings.portraitOutput) {
                         ForEach(PortraitOutput.allCases) { Text($0.title).tag($0) }
                     }
                     Toggle("快门负片显影动画", isOn: $settings.developAnimation)
@@ -27,7 +27,7 @@ struct SettingsSheet: View {
                 } header: {
                     Text("拍摄")
                 } footer: {
-                    Text("默认以最高分辨率（48MP）拍摄，裁切后按实际像素输出 HEIC，不做插值放大。横持时 65:24 沿传感器长边裁切，像素最多。")
+                    Text("默认横屏，以最高分辨率（48MP）拍摄，裁切后按实际像素输出 HEIC，不做插值放大。横屏时 65:24 沿传感器长边裁切，像素最多。")
                 }
 
                 Section {

@@ -17,6 +17,8 @@ enum CaptureMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
     var title: String { self == .ipan ? "iPAN" : "双摄拼接 β" }
+    /// 横屏竖排模式栏用的短名
+    var shortTitle: String { self == .ipan ? "iPAN" : "拼接β" }
 }
 
 /// 竖握手机时的输出方向

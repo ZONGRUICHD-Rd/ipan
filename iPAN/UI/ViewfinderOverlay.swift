@@ -1,68 +1,49 @@
 import SwiftUI
 
-/// 65:24 取景窗口：窗口外压暗，窗口四角是胶片取景器式的角标，窗口内左上角显示画幅信息。
+/// 65:24 取景窗口：窗口外压暗（仿 OPPO XPAN），窗口四角是胶片取景器式的角标，窗口上方显示画幅信息。
 struct PanoramaMask: View {
-    /// 窗口占取景器的比例
-    let window: CGSize
+    /// 取景窗口（全屏归一化坐标，原点左上）
+    let band: CGRect
     let caption: String
-    let iconRotation: Angle
-    var mainCoverage: CGFloat? = nil
+    /// 拼接模式：主摄覆盖范围（相对取景窗口）
+    var mainCoverage: CGSize? = nil
 
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
-            let rect = CGRect(x: (size.width - size.width * window.width) / 2,
-                              y: (size.height - size.height * window.height) / 2,
-                              width: size.width * window.width,
-                              height: size.height * window.height)
-            ZStack {
-                // 窗口外的遮罩（even-odd 填充挖洞）
+            let rect = CGRect(x: band.minX * size.width, y: band.minY * size.height,
+                              width: band.width * size.width, height: band.height * size.height)
+            ZStack(alignment: .topLeading) {
                 Path { p in
                     p.addRect(CGRect(origin: .zero, size: size))
                     p.addRect(rect)
                 }
-                .fill(Color.black.opacity(0.72), style: FillStyle(eoFill: true))
+                .fill(Color.black.opacity(0.78), style: FillStyle(eoFill: true))
 
                 CornerMarks(rect: rect)
                     .stroke(Color.white.opacity(0.9), style: StrokeStyle(lineWidth: 2, lineCap: .round))
 
                 if let mainCoverage {
-                    let w = size.width * mainCoverage, h = size.height * mainCoverage
+                    let w = rect.width * mainCoverage.width, h = rect.height * mainCoverage.height
                     RoundedRectangle(cornerRadius: 3)
                         .stroke(OPPOStyle.accent.opacity(0.85), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
                         .frame(width: w, height: h)
-                        .position(x: size.width / 2, y: size.height / 2)
+                        .position(x: rect.midX, y: rect.midY)
                     Text("主摄")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(OPPOStyle.accent)
-                        .rotationEffect(iconRotation)
-                        .position(x: size.width / 2, y: (size.height - h) / 2 + 12)
+                        .position(x: rect.midX, y: rect.midY - h / 2 + 10)
                 }
 
                 Text(caption)
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Color.black.opacity(0.35)))
+                    .foregroundStyle(.white.opacity(0.85))
                     .fixedSize()
-                    .rotationEffect(iconRotation)
-                    .position(captionPosition(in: rect))
+                    .offset(x: rect.minX + 2, y: max(0, rect.minY - 20))
             }
-            .animation(.spring(response: 0.45, dampingFraction: 0.85), value: window)
+            .animation(.spring(response: 0.45, dampingFraction: 0.85), value: band)
         }
         .allowsHitTesting(false)
-    }
-
-    /// 标签放在窗口「视觉上的左上角」（随手机方向变化）
-    private func captionPosition(in rect: CGRect) -> CGPoint {
-        let degrees = Int(iconRotation.degrees.rounded()) % 360
-        let normalized = (degrees + 360) % 360
-        switch normalized {
-        case 90: return CGPoint(x: rect.maxX - 14, y: rect.minY + 52) // 右转横持：窗口右上
-        case 270: return CGPoint(x: rect.minX + 14, y: rect.maxY - 52)
-        default: return CGPoint(x: rect.minX + 58, y: rect.minY + 14)
-        }
     }
 }
 
@@ -97,16 +78,18 @@ struct DevelopOverlay: View {
     let phase: CameraModel.DevelopPhase
     let image: UIImage?
     let progress: Double
-    let window: CGSize
+    let band: CGRect
     let namespace: Namespace.ID
 
     var body: some View {
         GeometryReader { proxy in
-            let w = proxy.size.width * window.width, h = proxy.size.height * window.height
+            let w = proxy.size.width * band.width, h = proxy.size.height * band.height
+            let center = CGPoint(x: proxy.size.width * band.midX, y: proxy.size.height * band.midY)
             ZStack {
                 if phase == .curtain {
                     Rectangle().fill(Color.black)
                         .frame(width: w, height: h)
+                        .position(center)
                         .transition(.opacity)
                 }
                 if phase == .developing, let image {
@@ -117,10 +100,10 @@ struct DevelopOverlay: View {
                         .modifier(FilmDevelopEffect(progress: progress))
                         .clipShape(Rectangle())
                         .matchedGeometryEffect(id: "shot", in: namespace)
+                        .position(center)
                         .transition(.identity)
                 }
             }
-            .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .allowsHitTesting(false)
     }

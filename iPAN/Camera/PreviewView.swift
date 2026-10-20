@@ -9,8 +9,10 @@ final class PreviewState {
         var film: FilmMode = .color
         var palette = PaletteSettings()
         var vignette = true
-        /// 取景窗口在视图中的尺寸（0…1 的比例），用于让暗角以取景窗口为中心
-        var window = CGSize(width: 1, height: 1)
+        /// 65:24 取景窗口在视图中的位置（0…1，原点左上）
+        var band = CGRect(x: 0, y: 0, width: 1, height: 1)
+        /// 取景窗口覆盖的画面比例：iPAN 为 1（整条边），拼接为 0.98
+        var span: CGFloat = 1
     }
 
     private let lock = NSLock()
@@ -92,14 +94,23 @@ final class PreviewRenderer: NSObject, MTKViewDelegate {
         lock.unlock()
     }
 
-    /// 帧（竖屏方向）→ 中心裁切（焦段）→ 缩放到画面 → 风格 → 暗角
+    /// 取景窗口在 drawable 中的像素矩形（Core Image 坐标，原点左下）
+    static func bandRect(_ band: CGRect, in size: CGSize) -> CGRect {
+        CGRect(x: band.minX * size.width, y: (1 - band.maxY) * size.height,
+               width: band.width * size.width, height: band.height * size.height)
+    }
+
+    /// 帧 → 中心裁切（焦段）→ 让裁切后的长边正好铺满取景窗口 → 风格 → 暗角（以取景窗口为中心）
     private func compose(_ frame: CIImage, values: PreviewState.Values, drawableSize: CGSize) -> CIImage {
         let e = frame.extent
         let cs = max(0.05, min(1, values.cropScale))
         let crop = CGRect(x: e.midX - e.width * cs / 2, y: e.midY - e.height * cs / 2, width: e.width * cs, height: e.height * cs)
-        let scale = max(drawableSize.width / crop.width, drawableSize.height / crop.height)
-        let tx = (drawableSize.width - crop.width * scale) / 2
-        let ty = (drawableSize.height - crop.height * scale) / 2
+        let band = PreviewRenderer.bandRect(values.band, in: drawableSize)
+        let span = max(0.1, values.span)
+        // 横向窗口对应画面宽度，竖向窗口对应画面高度（与 PhotoProcessor 的裁切规则一致）
+        let scale = band.width >= band.height ? band.width / (crop.width * span) : band.height / (crop.height * span)
+        let tx = band.midX - crop.width * scale / 2
+        let ty = band.midY - crop.height * scale / 2
         var image = frame.cropped(to: crop)
             .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
             .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
@@ -108,28 +119,26 @@ final class PreviewRenderer: NSObject, MTKViewDelegate {
         image = FilmLook.applyPalette(image, values.palette)
         image = FilmLook.applyFilm(image, values.film)
         if values.vignette {
-            let window = CGSize(width: drawableSize.width * values.window.width, height: drawableSize.height * values.window.height)
             let v = CIFilter(name: "CIVignetteEffect", parameters: [
                 kCIInputImageKey: image,
-                kCIInputCenterKey: CIVector(x: drawableSize.width / 2, y: drawableSize.height / 2),
-                kCIInputRadiusKey: hypot(window.width, window.height) * 0.42,
+                kCIInputCenterKey: CIVector(x: band.midX, y: band.midY),
+                kCIInputRadiusKey: hypot(band.width, band.height) * 0.42,
                 kCIInputIntensityKey: 0.45,
                 "inputFalloff": 0.6,
             ])
             image = v?.outputImage?.cropped(to: CGRect(origin: .zero, size: drawableSize)) ?? image
         }
-        return image
+        return image.composited(over: CIImage(color: .black).cropped(to: CGRect(origin: .zero, size: drawableSize)))
     }
 
     /// 截取当前取景窗口内的画面，用于快门后的负片显影动画
-    func snapshot(window: CGSize, maxSide: CGFloat = 1200) -> UIImage? {
+    func snapshot(band: CGRect, maxSide: CGFloat = 1200) -> UIImage? {
         lock.lock()
         let image = lastRendered
         let size = lastDrawableSize
         lock.unlock()
         guard let image, size.width > 0 else { return nil }
-        let w = size.width * window.width, h = size.height * window.height
-        let rect = CGRect(x: (size.width - w) / 2, y: (size.height - h) / 2, width: w, height: h).integral
+        let rect = PreviewRenderer.bandRect(band, in: size).integral
         let s = min(1, maxSide / max(rect.width, rect.height))
         let out = image.cropped(to: rect)
             .transformed(by: CGAffineTransform(translationX: -rect.minX, y: -rect.minY))

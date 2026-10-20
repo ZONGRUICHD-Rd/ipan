@@ -12,6 +12,64 @@ struct CameraScreen: View {
     }
 }
 
+/// 界面布局。默认横屏，按 OPPO 相机横持时的布局：
+/// 左侧是原顶栏（竖排，液态玻璃）；中间是全屏取景、65:24 窗口尽量大；
+/// 右侧从内到外依次是焦段圆钮（竖排）、模式栏（竖排）、快门列（上：胶片切换，中：快门，下：缩略图）。
+/// 竖屏窗口（iPad、分屏等）退回上中下布局。
+struct CameraLayout {
+    let size: CGSize
+    let safe: EdgeInsets
+
+    var isLandscape: Bool { size.width > size.height }
+
+    // 横屏各列宽度
+    static let leftRail: CGFloat = 56
+    static let focalRail: CGFloat = 56
+    static let modeRail: CGFloat = 64
+    static let controlRail: CGFloat = 96
+    // 竖屏上下区域高度
+    static let topBar: CGFloat = 60
+    static let bottomControls: CGFloat = 220
+
+    /// 两侧控件伸进一部分安全区（灵动岛只占边缘约 48pt），把空间留给取景窗口
+    var leading: CGFloat { max(safe.leading - 20, 10) }
+    var trailing: CGFloat { max(safe.trailing - 24, 8) }
+    var top: CGFloat { max(safe.top, 10) }
+    var bottom: CGFloat { max(safe.bottom, 10) }
+
+    var rightRailsWidth: CGFloat { Self.focalRail + Self.modeRail + Self.controlRail }
+    var rightRailsMinX: CGFloat { size.width - trailing - rightRailsWidth }
+
+    /// 取景窗口可用的区域（点）
+    var bandRegion: CGRect {
+        if isLandscape {
+            let minX = leading + Self.leftRail + 8
+            let maxX = rightRailsMinX - 6
+            return CGRect(x: minX, y: top + 22, width: max(0, maxX - minX), height: max(0, size.height - top - bottom - 30))
+        }
+        let minY = top + Self.topBar + 22
+        let maxY = size.height - bottom - Self.bottomControls
+        return CGRect(x: 12, y: minY, width: size.width - 24, height: max(0, maxY - minY))
+    }
+
+    /// 把指定宽高比的窗口放进可用区域并居中，返回全屏归一化坐标
+    func band(ratio: CGFloat) -> CGRect {
+        let region = bandRegion
+        guard region.width > 0, region.height > 0, size.width > 0, size.height > 0 else {
+            return CGRect(x: 0.1, y: 0.3, width: 0.8, height: 0.3)
+        }
+        var w = region.width
+        var h = w / ratio
+        if h > region.height {
+            h = region.height
+            w = h * ratio
+        }
+        let rect = CGRect(x: region.midX - w / 2, y: region.midY - h / 2, width: w, height: h)
+        return CGRect(x: rect.minX / size.width, y: rect.minY / size.height,
+                      width: rect.width / size.width, height: rect.height / size.height)
+    }
+}
+
 private struct CameraScreenContent: View {
     @ObservedObject var model: CameraModel
     @ObservedObject var camera: CameraController
@@ -24,68 +82,203 @@ private struct CameraScreenContent: View {
     @State private var showReview = false
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            VStack(spacing: 0) {
-                topBar
-                    .padding(.horizontal, 16)
-                    .padding(.top, 6)
-                    .padding(.bottom, 10)
-                viewfinder
-                Spacer(minLength: 8)
-                controls
-            }
+        GeometryReader { proxy in
+            let layout = CameraLayout(size: proxy.size, safe: proxy.safeAreaInsets)
+            let band = layout.band(ratio: model.bandRatio(isLandscapeUI: layout.isLandscape))
+            ZStack(alignment: .topLeading) {
+                Color.black
 
-            if showPalette {
-                VStack {
-                    Spacer()
-                    PalettePanel(settings: settings, onChange: { model.syncPreview() }) {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { showPalette = false }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 24)
+                viewfinder(screen: proxy.size)
+
+                if layout.isLandscape {
+                    landscapeControls(layout)
+                } else {
+                    portraitControls(layout)
                 }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
 
-            if let toast = model.toast {
-                VStack {
+                if showPalette {
+                    paletteOverlay(layout)
+                        .transition(.move(edge: layout.isLandscape ? .trailing : .bottom).combined(with: .opacity))
+                }
+
+                if let toast = model.toast {
                     Text(toast)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 9)
                         .glassEffect(.regular, in: Capsule())
-                        .rotationEffect(camera.iconRotation)
-                        .padding(.top, 70)
-                    Spacer()
+                        .position(x: layout.bandRegion.midX, y: layout.top + 26)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .allowsHitTesting(false)
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-                .allowsHitTesting(false)
             }
+            .onAppear {
+                model.refreshInterfaceOrientation(fallbackSize: proxy.size)
+                model.updateBand(band)
+            }
+            .onChange(of: band) { _, newBand in model.updateBand(newBand) }
+            .onChange(of: proxy.size) { _, newSize in model.refreshInterfaceOrientation(fallbackSize: newSize) }
         }
+        .ignoresSafeArea()
         .onAppear { model.start() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { camera.resume() } else if phase == .background { camera.stop() }
         }
-        .onChange(of: camera.isLandscape) { model.syncPreview() }
         .sheet(isPresented: $showSettings) {
             SettingsSheet(settings: settings, lineup: camera.lineup, mainPhotoSize: camera.photoDimensions, onChange: { model.syncPreview() })
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
         }
         .fullScreenCover(isPresented: $showReview) {
             if let shot = model.lastShot { ShotReview(shot: shot) }
         }
     }
 
-    // MARK: 顶栏（液态玻璃）
+    // MARK: 取景
 
-    private var topBar: some View {
-        GlassEffectContainer(spacing: 12) {
-            HStack(spacing: 12) {
-                glassIcon(systemName: "gearshape") { showSettings = true }
-                Spacer()
-                HStack(spacing: 14) {
+    private var caption: String {
+        switch model.mode {
+        case .ipan:
+            return "iPAN  \(model.plan.focal.millimeters)mm  65:24  \(settings.filmMode == .color ? "COLOR" : "B&W")"
+        case .stitch:
+            return "iPAN WIDE β  双摄拼接  65:24"
+        }
+    }
+
+    private func viewfinder(screen: CGSize) -> some View {
+        ZStack(alignment: .topLeading) {
+            CameraPreview(frames: camera.frames, state: model.previewState, renderer: model.renderer)
+                .blur(radius: camera.isSwitching ? 22 : 0)
+                .animation(.easeInOut(duration: 0.22), value: camera.isSwitching)
+                .contentShape(Rectangle())
+                .onTapGesture { location in
+                    model.focus(at: CGPoint(x: location.x / max(1, screen.width), y: location.y / max(1, screen.height)), screen: screen)
+                }
+
+            PanoramaMask(band: model.band, caption: caption,
+                         mainCoverage: model.mode == .stitch ? model.mainCoverage : nil)
+
+            DevelopOverlay(phase: model.developPhase, image: model.developImage, progress: model.developProgress,
+                           band: model.band, namespace: shotNamespace)
+
+            if let point = model.focusPoint {
+                OPPOFocusIndicator()
+                    .position(x: point.x * screen.width, y: point.y * screen.height)
+                    .id(point.x + point.y)
+            }
+
+            if model.mode == .stitch && !camera.isLandscape {
+                RotateHint()
+                    .position(x: screen.width / 2, y: screen.height / 2)
+                    .transition(.opacity)
+            }
+
+            if camera.authorization == .denied {
+                VStack(spacing: 10) {
+                    Image(systemName: "camera.fill").font(.largeTitle)
+                    Text("请在「设置」中允许 iPAN 使用相机")
+                }
+                .foregroundStyle(.white)
+                .position(x: screen.width / 2, y: screen.height / 2)
+            }
+        }
+        .frame(width: screen.width, height: screen.height)
+    }
+
+    // MARK: 横屏控件
+
+    private func landscapeControls(_ layout: CameraLayout) -> some View {
+        let railHeight = layout.size.height - layout.top - layout.bottom
+        return ZStack(alignment: .topLeading) {
+            // 左：工具栏（液态玻璃，竖排）
+            toolRail(axis: .vertical)
+                .frame(width: CameraLayout.leftRail, height: railHeight)
+                .position(x: layout.leading + CameraLayout.leftRail / 2, y: layout.top + railHeight / 2)
+
+            // 右：焦段 · 模式 · 快门列（OPPO）
+            HStack(spacing: 0) {
+                Group {
+                    if model.mode == .ipan {
+                        OPPOFocalSelector(focals: FocalLength.all, selected: settings.focal, axis: .vertical) { model.select(focal: $0) }
+                            .transition(.opacity)
+                    } else {
+                        Color.clear
+                    }
+                }
+                .frame(width: CameraLayout.focalRail)
+
+                OPPOModeCarousel(modes: CaptureMode.allCases, selected: model.mode, axis: .vertical) { model.select(mode: $0) }
+                    .frame(width: CameraLayout.modeRail, height: min(railHeight, 220))
+
+                VStack {
+                    filmButton
+                    Spacer()
+                    shutter
+                    Spacer()
+                    thumbnailButton
+                }
+                .padding(.vertical, 8)
+                .frame(width: CameraLayout.controlRail, height: railHeight)
+            }
+            .frame(width: layout.rightRailsWidth, height: railHeight)
+            .position(x: layout.rightRailsMinX + layout.rightRailsWidth / 2, y: layout.top + railHeight / 2)
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: model.mode)
+    }
+
+    // MARK: 竖屏控件（iPad / 竖向窗口）
+
+    private func portraitControls(_ layout: CameraLayout) -> some View {
+        ZStack(alignment: .topLeading) {
+            toolRail(axis: .horizontal)
+                .frame(width: layout.size.width - 32, height: CameraLayout.topBar)
+                .position(x: layout.size.width / 2, y: layout.top + CameraLayout.topBar / 2)
+
+            VStack(spacing: 16) {
+                if model.mode == .ipan {
+                    OPPOFocalSelector(focals: FocalLength.all, selected: settings.focal) { model.select(focal: $0) }
+                } else {
+                    Text("超广角 + 主摄同步曝光，横持拍摄")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(OPPOStyle.secondaryText)
+                        .frame(height: 46)
+                }
+                OPPOModeCarousel(modes: CaptureMode.allCases, selected: model.mode) { model.select(mode: $0) }
+                    .frame(height: 30)
+                HStack {
+                    thumbnailButton
+                    Spacer()
+                    shutter
+                    Spacer()
+                    filmButton
+                }
+                .padding(.horizontal, 36)
+            }
+            .frame(width: layout.size.width, height: CameraLayout.bottomControls)
+            .position(x: layout.size.width / 2, y: layout.size.height - layout.bottom - CameraLayout.bottomControls / 2)
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: model.mode)
+    }
+
+    // MARK: 组件
+
+    /// 原 OPPO 顶栏：设置 / 水印 / 暗角 / 调色盘（液态玻璃）
+    private func toolRail(axis: Axis) -> some View {
+        let outer = axis == .vertical ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+        let inner = axis == .vertical ? AnyLayout(VStackLayout(spacing: 18)) : AnyLayout(HStackLayout(spacing: 18))
+        return GlassEffectContainer(spacing: 12) {
+            outer {
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 17, weight: .medium))
+                        .frame(width: 42, height: 42)
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: Circle())
+
+                Spacer(minLength: 0)
+
+                inner {
                     Button {
                         settings.watermarkEnabled.toggle()
                         model.showToast(settings.watermarkEnabled ? "水印：\(settings.watermarkTemplate)" : "水印已关闭")
@@ -103,138 +296,37 @@ private struct CameraScreenContent: View {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { showPalette.toggle() }
                     } label: {
                         Image(systemName: "paintpalette")
-                            .foregroundStyle(settings.palette.isIdentity ? .white : OPPOStyle.accent)
+                            .foregroundStyle(settings.palette.isIdentity && !showPalette ? .white : OPPOStyle.accent)
                     }
                 }
                 .font(.system(size: 17, weight: .medium))
-                .rotationEffect(camera.iconRotation)
                 .buttonStyle(.plain)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(axis == .vertical ? .vertical : .horizontal, 16)
+                .padding(axis == .vertical ? .horizontal : .vertical, 11)
                 .glassEffect(.regular.interactive(), in: Capsule())
-                Spacer()
-                Text(settings.filmMode == .color ? "C" : "BW")
-                    .font(.system(size: 13, weight: .heavy, design: .rounded))
-                    .frame(width: 40, height: 40)
-                    .rotationEffect(camera.iconRotation)
-                    .glassEffect(.regular.interactive(), in: Circle())
-                    .onTapGesture { model.toggleFilm() }
+
+                Spacer(minLength: 0)
+
+                Color.clear.frame(width: 42, height: 42)
             }
         }
-        .animation(.spring(response: 0.45, dampingFraction: 0.8), value: camera.iconRotation)
+        .foregroundStyle(.white)
     }
 
-    private func glassIcon(systemName: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 17, weight: .medium))
+    private var shutter: some View {
+        OPPOShutterButton(isBusy: model.processingCount > 0, isEnabled: model.canShoot) {
+            model.shutter()
+        }
+    }
+
+    private var filmButton: some View {
+        OPPOCircleButton {
+            model.toggleFilm()
+        } label: {
+            Text(settings.filmMode == .color ? "C" : "BW")
+                .font(.system(size: 14, weight: .heavy, design: .rounded))
                 .foregroundStyle(.white)
-                .frame(width: 40, height: 40)
-                .rotationEffect(camera.iconRotation)
         }
-        .buttonStyle(.plain)
-        .glassEffect(.regular.interactive(), in: Circle())
-    }
-
-    // MARK: 取景器
-
-    private var window: CGSize { model.window(isLandscape: camera.isLandscape) }
-
-    private var caption: String {
-        switch model.mode {
-        case .ipan:
-            let plan = model.plan
-            return "iPAN \(plan.focal.millimeters)mm · 65:24 · \(settings.filmMode == .color ? "C" : "BW")"
-        case .stitch:
-            return "iPAN WIDE β · 双摄拼接"
-        }
-    }
-
-    private var viewfinder: some View {
-        GeometryReader { proxy in
-            ZStack {
-                CameraPreview(frames: camera.frames, state: model.previewState, renderer: model.renderer)
-                    .blur(radius: camera.isSwitching ? 22 : 0)
-                    .scaleEffect(camera.isSwitching ? 1.04 : 1)
-                    .animation(.easeInOut(duration: 0.22), value: camera.isSwitching)
-
-                PanoramaMask(window: window, caption: caption, iconRotation: camera.iconRotation,
-                             mainCoverage: model.mode == .stitch ? model.mainCoverage : nil)
-
-                DevelopOverlay(phase: model.developPhase, image: model.developImage, progress: model.developProgress,
-                               window: window, namespace: shotNamespace)
-
-                if let point = model.focusPoint {
-                    OPPOFocusIndicator()
-                        .position(x: point.x * proxy.size.width, y: point.y * proxy.size.height)
-                        .id(point.x + point.y)
-                }
-
-                if model.mode == .stitch && !camera.isLandscape {
-                    RotateHint().transition(.opacity)
-                }
-
-                if camera.authorization == .denied {
-                    VStack(spacing: 10) {
-                        Image(systemName: "camera.fill").font(.largeTitle)
-                        Text("请在「设置」中允许 iPAN 使用相机")
-                    }
-                    .foregroundStyle(.white)
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { location in
-                model.focus(atNormalized: CGPoint(x: location.x / proxy.size.width, y: location.y / proxy.size.height))
-            }
-        }
-        .aspectRatio(3.0 / 4.0, contentMode: .fit)
-        .clipped()
-        .animation(.easeInOut(duration: 0.25), value: camera.isLandscape)
-    }
-
-    // MARK: 底部控制区（OPPO 风格）
-
-    private var controls: some View {
-        VStack(spacing: 18) {
-            if model.mode == .ipan {
-                OPPOFocalSelector(focals: FocalLength.all, selected: settings.focal, iconRotation: camera.iconRotation) { focal in
-                    model.select(focal: focal)
-                }
-                .transition(.opacity)
-            } else {
-                Text("超广角 + 主摄同步曝光，横持拍摄")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(OPPOStyle.secondaryText)
-                    .frame(height: 46)
-            }
-
-            OPPOModeCarousel(modes: CaptureMode.allCases, selected: model.mode) { mode in
-                model.select(mode: mode)
-            }
-            .frame(height: 30)
-
-            HStack {
-                thumbnailButton
-                Spacer()
-                OPPOShutterButton(isBusy: model.processingCount > 0, isEnabled: model.canShoot) {
-                    model.shutter()
-                }
-                Spacer()
-                OPPOCircleButton {
-                    model.toggleFilm()
-                } label: {
-                    Image(systemName: settings.filmMode == .color ? "film" : "film.fill")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(.white)
-                        .rotationEffect(camera.iconRotation)
-                }
-            }
-            .padding(.horizontal, 36)
-            .padding(.bottom, 18)
-        }
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: model.mode)
-        .animation(.spring(response: 0.45, dampingFraction: 0.8), value: camera.iconRotation)
     }
 
     private var thumbnailButton: some View {
@@ -253,8 +345,18 @@ private struct CameraScreenContent: View {
             .frame(width: 48, height: 48)
             .clipShape(Circle())
             .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1.5))
-            .rotationEffect(camera.iconRotation)
         }
         .buttonStyle(.plain)
+    }
+
+    private func paletteOverlay(_ layout: CameraLayout) -> some View {
+        let region = layout.bandRegion
+        let width = layout.isLandscape ? min(520, region.width) : layout.size.width - 24
+        return PalettePanel(settings: settings, compact: layout.isLandscape, onChange: { model.syncPreview() }) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { showPalette = false }
+        }
+        .frame(width: max(300, width))
+        .position(x: layout.isLandscape ? region.midX : layout.size.width / 2,
+                  y: layout.isLandscape ? layout.size.height / 2 : layout.size.height - layout.bottom - CameraLayout.bottomControls - 150)
     }
 }

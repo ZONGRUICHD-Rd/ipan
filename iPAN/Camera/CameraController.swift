@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreImage
 import SwiftUI
+import UIKit
 
 /// 预览帧缓存：视频线程写入，Metal 渲染线程读取
 final class FrameStore {
@@ -33,10 +34,9 @@ final class CameraController: NSObject, ObservableObject {
     @Published private(set) var authorization: Authorization = .unknown
     @Published private(set) var configuration: CameraConfiguration?
     @Published private(set) var isSwitching = false
-    /// 横持（以地平线为准）
-    @Published private(set) var isLandscape = false
-    /// 竖屏锁定的界面里，图标需要旋转的角度（仿 OPPO 相机：界面不转，图标跟着转）
-    @Published private(set) var iconRotation: Angle = .zero
+    /// 界面方向。预览与成片都以界面方向为准，保证取景窗口里看到的就是输出的画面。
+    @Published private(set) var interfaceOrientation: UIInterfaceOrientation = .landscapeRight
+    var isLandscape: Bool { interfaceOrientation.isLandscape }
     @Published private(set) var photoDimensions: CMVideoDimensions?
     @Published private(set) var dualWideAvailable = false
     @Published private(set) var lastError: String?
@@ -50,9 +50,8 @@ final class CameraController: NSObject, ObservableObject {
     private let photoOutput = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()
     private var input: AVCaptureDeviceInput?
-    private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
-    private var rotationObservation: NSKeyValueObservation?
-    private var captureAngle: CGFloat = 90
+    /// 只在 sessionQueue 上读写
+    private var rotationAngle: CGFloat = 0
     private var inFlight: [Int64: PhotoCaptureDelegate] = [:]
 
     var currentDevice: AVCaptureDevice? { input?.device }
@@ -106,7 +105,6 @@ final class CameraController: NSObject, ObservableObject {
                 self.configuration = configuration
                 self.photoDimensions = self.photoOutput.maxPhotoDimensions
                 self.lastError = result
-                self.installRotationCoordinator()
                 // 留一点时间给新镜头出第一帧，配合界面的模糊过渡
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { self.isSwitching = false }
             }
@@ -169,7 +167,7 @@ final class CameraController: NSObject, ObservableObject {
         photoOutput.maxPhotoQualityPrioritization = .quality
 
         if let connection = videoOutput.connection(with: .video) {
-            if connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
+            if connection.isVideoRotationAngleSupported(rotationAngle) { connection.videoRotationAngle = rotationAngle }
             if connection.isVideoMirroringSupported { connection.isVideoMirrored = false }
         }
 
@@ -211,27 +209,26 @@ final class CameraController: NSObject, ObservableObject {
 
     // MARK: 方向
 
-    private func installRotationCoordinator() {
-        guard let device = currentDevice else { return }
-        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
-        rotationCoordinator = coordinator
-        rotationObservation = coordinator.observe(\.videoRotationAngleForHorizonLevelCapture, options: [.initial, .new]) { [weak self] c, _ in
-            let angle = c.videoRotationAngleForHorizonLevelCapture
-            DispatchQueue.main.async { self?.updateOrientation(angle) }
+    /// 后置摄像头的视频旋转角：传感器原生方向等于界面 landscapeRight（0°）
+    static func rotationAngle(for orientation: UIInterfaceOrientation) -> CGFloat {
+        switch orientation {
+        case .landscapeLeft: return 180
+        case .portrait: return 90
+        case .portraitUpsideDown: return 270
+        default: return 0
         }
     }
 
-    private func updateOrientation(_ angle: CGFloat) {
-        captureAngle = angle
-        let normalized = Int(angle.rounded()) % 360
-        let landscape = normalized == 0 || normalized == 180
-        if landscape != isLandscape { isLandscape = landscape }
-        let target: Angle = .degrees(Double(90 - normalized))
-        // 选取最短的旋转路径，避免图标转一大圈
-        var delta = (target.degrees - iconRotation.degrees).truncatingRemainder(dividingBy: 360)
-        if delta > 180 { delta -= 360 }
-        if delta < -180 { delta += 360 }
-        if abs(delta) > 0.5 { iconRotation = .degrees(iconRotation.degrees + delta) }
+    func updateInterfaceOrientation(_ orientation: UIInterfaceOrientation) {
+        guard orientation != .unknown, orientation != interfaceOrientation else { return }
+        interfaceOrientation = orientation
+        let angle = CameraController.rotationAngle(for: orientation)
+        sessionQueue.async {
+            self.rotationAngle = angle
+            if let connection = self.videoOutput.connection(with: .video), connection.isVideoRotationAngleSupported(angle) {
+                connection.videoRotationAngle = angle
+            }
+        }
     }
 
     // MARK: 对焦
@@ -258,8 +255,8 @@ final class CameraController: NSObject, ObservableObject {
     ///   - willCapture: 快门真正开始曝光时（主线程）
     ///   - completion: 拿到全部照片（拼接模式下两张）后回调（主线程）
     func capture(willCapture: @escaping () -> Void, completion: @escaping (Result<[AVCapturePhoto], Error>) -> Void) {
-        let angle = captureAngle
         sessionQueue.async {
+            let angle = self.rotationAngle
             guard self.input != nil else {
                 DispatchQueue.main.async { completion(.failure(ProcessingError.decode)) }
                 return

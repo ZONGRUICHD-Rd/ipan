@@ -56,16 +56,17 @@ struct OPPOShutterButton: View {
     }
 }
 
-// MARK: - 焦段选择（OPPO 的半透明小圆钮，选中项放大并显示单位）
+// MARK: - 焦段选择（OPPO 的半透明小圆钮，选中项放大并显示单位；横屏时竖排在快门一侧）
 
 struct OPPOFocalSelector: View {
     let focals: [FocalLength]
     let selected: FocalLength?
-    let iconRotation: Angle
+    var axis: Axis = .horizontal
     let onSelect: (FocalLength) -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
+        let layout = axis == .horizontal ? AnyLayout(HStackLayout(spacing: 10)) : AnyLayout(VStackLayout(spacing: 8))
+        layout {
             ForEach(focals) { focal in
                 let isSelected = focal == selected
                 Button {
@@ -80,62 +81,74 @@ struct OPPOFocalSelector: View {
                         .frame(width: isSelected ? 46 : 34, height: isSelected ? 46 : 34)
                         .background(Circle().fill(OPPOStyle.chipFill))
                         .overlay(Circle().stroke(Color.white.opacity(isSelected ? 0.0 : 0.08), lineWidth: 1))
-                        .rotationEffect(iconRotation)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, axis == .horizontal ? 10 : 5)
+        .padding(.vertical, axis == .horizontal ? 6 : 10)
         .background(Capsule().fill(Color.black.opacity(0.18)))
         .animation(.spring(response: 0.3, dampingFraction: 0.75), value: selected)
     }
 }
 
-// MARK: - 模式轮播（ColorOS：文字横排，选中项居中变白加粗，下有小圆点）
+// MARK: - 模式轮播（ColorOS：选中项居中变白加粗并带小圆点；横屏时竖排滚动）
 
 struct OPPOModeCarousel: View {
     let modes: [CaptureMode]
     let selected: CaptureMode
+    var axis: Axis = .horizontal
     let onSelect: (CaptureMode) -> Void
 
-    private let itemWidth: CGFloat = 112
     @GestureState private var drag: CGFloat = 0
+
+    private var itemLength: CGFloat { axis == .horizontal ? 112 : 46 }
 
     var body: some View {
         let index = CGFloat(modes.firstIndex(of: selected) ?? 0)
-        let base = (CGFloat(modes.count - 1) / 2 - index) * itemWidth
-        HStack(spacing: 0) {
+        let base = (CGFloat(modes.count - 1) / 2 - index) * itemLength
+        let layout = axis == .horizontal ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+        layout {
             ForEach(modes) { mode in
-                let isSelected = mode == selected
-                VStack(spacing: 5) {
-                    Text(mode.title)
-                        .font(.system(size: 14, weight: isSelected ? .bold : .medium))
-                        .foregroundStyle(isSelected ? .white : OPPOStyle.secondaryText)
-                    Circle()
-                        .fill(isSelected ? OPPOStyle.accent : .clear)
-                        .frame(width: 4, height: 4)
-                }
-                .frame(width: itemWidth)
-                .contentShape(Rectangle())
-                .onTapGesture { onSelect(mode) }
+                item(mode, isSelected: mode == selected)
+                    .frame(width: axis == .horizontal ? itemLength : nil, height: axis == .vertical ? itemLength : nil)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onSelect(mode) }
             }
         }
-        .offset(x: base + drag)
-        .frame(maxWidth: .infinity)
+        .offset(x: axis == .horizontal ? base + drag : 0, y: axis == .vertical ? base + drag : 0)
+        .frame(maxWidth: axis == .horizontal ? .infinity : nil, maxHeight: axis == .vertical ? .infinity : nil)
         .clipped()
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 12)
-                .updating($drag) { value, state, _ in state = value.translation.width * 0.6 }
+                .updating($drag) { value, state, _ in
+                    state = (axis == .horizontal ? value.translation.width : value.translation.height) * 0.6
+                }
                 .onEnded { value in
+                    let t = axis == .horizontal ? value.translation.width : value.translation.height
                     let current = modes.firstIndex(of: selected) ?? 0
-                    if value.translation.width < -40, current + 1 < modes.count { onSelect(modes[current + 1]) }
-                    if value.translation.width > 40, current > 0 { onSelect(modes[current - 1]) }
+                    if t < -30, current + 1 < modes.count { onSelect(modes[current + 1]) }
+                    if t > 30, current > 0 { onSelect(modes[current - 1]) }
                 }
         )
         .animation(.spring(response: 0.35, dampingFraction: 0.82), value: selected)
         .animation(.interactiveSpring, value: drag)
+    }
+
+    @ViewBuilder
+    private func item(_ mode: CaptureMode, isSelected: Bool) -> some View {
+        let label = Text(axis == .vertical ? mode.shortTitle : mode.title)
+            .font(.system(size: 14, weight: isSelected ? .bold : .medium))
+            .foregroundStyle(isSelected ? .white : OPPOStyle.secondaryText)
+            .lineLimit(1)
+            .fixedSize()
+        let dot = Circle().fill(isSelected ? OPPOStyle.accent : .clear).frame(width: 4, height: 4)
+        if axis == .horizontal {
+            VStack(spacing: 5) { label; dot }
+        } else {
+            HStack(spacing: 5) { dot; label }
+        }
     }
 }
 

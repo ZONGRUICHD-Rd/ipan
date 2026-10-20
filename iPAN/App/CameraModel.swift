@@ -1,4 +1,5 @@
 import AVFoundation
+import UIKit
 import SwiftUI
 
 /// 界面状态 + 拍摄流程编排
@@ -44,26 +45,67 @@ final class CameraModel: ObservableObject {
 
     // MARK: 取景窗口
 
-    /// 取景窗口在 3:4 取景器中所占比例（宽, 高）
-    func window(isLandscape: Bool) -> CGSize {
-        let longOnScreen = (PanoramaFormat.short / PanoramaFormat.long) * (4.0 / 3.0) // 竖向窄条的宽度占比
-        switch mode {
-        case .stitch:
-            return CGSize(width: longOnScreen * 0.98, height: 0.98)
-        case .ipan:
-            if isLandscape || settings.portraitOutput == .portraitBand {
-                return CGSize(width: longOnScreen, height: 1)
-            }
-            return CGSize(width: 1, height: (PanoramaFormat.short / PanoramaFormat.long) * (3.0 / 4.0))
+    /// 65:24 取景窗口在全屏中的位置（0…1，原点左上），由界面布局计算后写入
+    @Published private(set) var band = CGRect(x: 0.1, y: 0.3, width: 0.8, height: 0.3)
+
+    /// 取景窗口宽高比。竖屏界面且设置为竖幅时是 24:65，其余都是 65:24。
+    func bandRatio(isLandscapeUI: Bool) -> CGFloat {
+        if mode == .ipan && !isLandscapeUI && settings.portraitOutput == .portraitBand {
+            return PanoramaFormat.short / PanoramaFormat.long
+        }
+        return PanoramaFormat.ratio
+    }
+
+    /// 取景窗口覆盖的画面比例：拼接模式只用超广角宽度的 98%
+    var bandSpan: CGFloat { mode == .stitch ? 0.98 : 1 }
+
+    func updateBand(_ newBand: CGRect) {
+        guard newBand != band else { return }
+        band = newBand
+        syncPreview()
+    }
+
+    /// 拼接模式下主摄在超广角预览中的覆盖范围（相对取景窗口的宽高比例）
+    var mainCoverage: CGSize {
+        let r = camera.dualWideFocalRatio()
+        // 取景窗口宽度 = 超广角画面宽度 × 0.98；画面为 4:3
+        let frameWidthInBands = 1 / bandSpan
+        return CGSize(width: frameWidthInBands / r, height: frameWidthInBands * 0.75 * PanoramaFormat.ratio / r)
+    }
+
+    // MARK: 界面方向
+
+    private var sceneObservation: NSKeyValueObservation?
+
+    func observeInterfaceOrientation() {
+        guard sceneObservation == nil,
+              let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first
+        else { return }
+        sceneObservation = scene.observe(\.effectiveGeometry, options: [.initial, .new]) { [weak self] scene, _ in
+            let orientation = scene.effectiveGeometry.interfaceOrientation
+            DispatchQueue.main.async { self?.applyInterfaceOrientation(orientation) }
         }
     }
 
-    /// 拼接模式下主摄在超广角预览中的覆盖范围
-    var mainCoverage: CGFloat { 1 / camera.dualWideFocalRatio() }
+    /// LiveContainer 等容器里取不到方向时，用窗口宽高兜底
+    func refreshInterfaceOrientation(fallbackSize size: CGSize) {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        var orientation = scene?.effectiveGeometry.interfaceOrientation ?? .unknown
+        if orientation == .unknown || orientation.isLandscape != (size.width > size.height) {
+            orientation = size.width > size.height ? .landscapeRight : .portrait
+        }
+        applyInterfaceOrientation(orientation)
+    }
+
+    private func applyInterfaceOrientation(_ orientation: UIInterfaceOrientation) {
+        camera.updateInterfaceOrientation(orientation)
+        syncPreview()
+    }
 
     // MARK: 生命周期
 
     func start() {
+        observeInterfaceOrientation()
         camera.start(with: currentConfiguration)
         syncPreview()
     }
@@ -78,7 +120,8 @@ final class CameraModel: ObservableObject {
         v.film = settings.filmMode
         v.palette = settings.palette
         v.vignette = settings.vignette
-        v.window = window(isLandscape: camera.isLandscape)
+        v.band = band
+        v.span = bandSpan
         previewState.values = v
     }
 
@@ -111,17 +154,33 @@ final class CameraModel: ObservableObject {
 
     // MARK: 对焦
 
-    /// - Parameter normalized: 取景器内的点击位置（0…1）
-    func focus(atNormalized normalized: CGPoint) {
+    /// - Parameters:
+    ///   - point: 点击位置（全屏归一化坐标，原点左上）
+    ///   - screen: 全屏尺寸（点）
+    func focus(at point: CGPoint, screen: CGSize) {
+        guard band.width > 0, band.height > 0 else { return }
+        // 取景窗口对应画面的长边（横窗口对应宽度），由此换算出点击点在整幅画面中的位置
+        let bandPx = CGSize(width: band.width * screen.width, height: band.height * screen.height)
+        let frameAspect: CGFloat = camera.isLandscape ? 3.0 / 4.0 : 4.0 / 3.0 // 高 / 宽
+        let frameW = (bandPx.width >= bandPx.height ? bandPx.width : bandPx.height / frameAspect) / bandSpan
+        let frameH = frameW * frameAspect
+        let dx = (point.x - band.midX) * screen.width / frameW
+        let dy = (point.y - band.midY) * screen.height / frameH
         let cs = previewState.values.cropScale
-        let u = 0.5 + (normalized.x - 0.5) * cs
-        let v = 0.5 + (normalized.y - 0.5) * cs
-        // 竖屏预览 → 传感器坐标（横向，原点左上）
-        camera.focus(at: CGPoint(x: v, y: 1 - u))
-        focusPoint = normalized
+        let u = min(1, max(0, 0.5 + dx * cs)), v = min(1, max(0, 0.5 + dy * cs))
+        // 界面坐标 → 传感器坐标（landscapeRight 方向，原点左上）
+        let device: CGPoint
+        switch camera.interfaceOrientation {
+        case .landscapeLeft: device = CGPoint(x: 1 - u, y: 1 - v)
+        case .portrait: device = CGPoint(x: v, y: 1 - u)
+        case .portraitUpsideDown: device = CGPoint(x: 1 - v, y: u)
+        default: device = CGPoint(x: u, y: v)
+        }
+        camera.focus(at: device)
+        focusPoint = point
         Task {
             try? await Task.sleep(for: .seconds(1.2))
-            if focusPoint == normalized { focusPoint = nil }
+            if focusPoint == point { focusPoint = nil }
         }
     }
 
@@ -137,8 +196,7 @@ final class CameraModel: ObservableObject {
             return
         }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        let window = window(isLandscape: camera.isLandscape)
-        let snapshot = renderer.snapshot(window: window)
+        let snapshot = renderer.snapshot(band: band)
         let options = ProcessingOptions(
             plan: plan,
             film: settings.filmMode,

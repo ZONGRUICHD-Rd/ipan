@@ -39,8 +39,15 @@ targets:
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+        # 默认横屏（iPhone 只支持横屏，取景窗口沿传感器长边，像素最多）
         UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationLandscapeRight
+          - UIInterfaceOrientationLandscapeLeft
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationLandscapeRight
+          - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
         UIStatusBarHidden: true
         UIViewControllerBasedStatusBarAppearance: false
         UIUserInterfaceStyle: Dark

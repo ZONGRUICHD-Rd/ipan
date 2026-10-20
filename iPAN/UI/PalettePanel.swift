@@ -3,11 +3,13 @@ import SwiftUI
 /// 调色盘（液态玻璃面板）：底色风格 + 色调/色彩二维盘 + 调色板强度，交互仿 iOS「摄影风格」。
 struct PalettePanel: View {
     @ObservedObject var settings: AppSettings
+    /// 横屏时高度有限，缩小二维盘并省略说明文字
+    var compact: Bool = false
     var onChange: () -> Void
     var onClose: () -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: compact ? 10 : 14) {
             HStack {
                 Text("调色盘")
                     .font(.system(size: 15, weight: .semibold))
@@ -50,7 +52,7 @@ struct PalettePanel: View {
 
             HStack(alignment: .center, spacing: 18) {
                 TonePad(tone: $settings.paletteTone, color: $settings.paletteColor, style: settings.paletteStyle, onChange: onChange)
-                    .frame(width: 168, height: 168)
+                    .frame(width: compact ? 136 : 168, height: compact ? 136 : 168)
                 VStack(alignment: .leading, spacing: 10) {
                     valueRow("色调", settings.paletteTone)
                     valueRow("色彩", settings.paletteColor)
@@ -62,10 +64,12 @@ struct PalettePanel: View {
                         .tint(.white)
                         .disabled(settings.paletteStyle == .standard)
                         .onChange(of: settings.paletteAmount) { onChange() }
-                    Text("苹果没有开放系统摄影风格的接口，这里是 iPAN 内置的同款调色盘，预览与成片一致。")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if !compact {
+                        Text("苹果没有开放系统摄影风格的接口，这里是 iPAN 内置的同款调色盘，预览与成片一致。")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
