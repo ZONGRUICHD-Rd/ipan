@@ -13,8 +13,7 @@ jobs:
     permissions:
       contents: write
     env:
-      # 每次构建一个版本号：0.1.<运行序号>，同时作为 Release 的 tag
-      APP_VERSION: 0.1.${{ github.run_number }}
+      # 版本号来自仓库根目录的 VERSION 文件；构建号是运行序号
       BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - name: Checkout
@@ -23,6 +22,19 @@ jobs:
           submodules: recursive
           # Release 说明需要上一个 tag 以来的全部提交
           fetch-depth: 0
+
+      - name: Read version
+        run: |
+          APP_VERSION=$(tr -d '[:space:]' < VERSION)
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          # 这个版本还没发过 → 正式版；发过了 → 带构建号的预览版
+          if git rev-parse -q --verify "refs/tags/v$APP_VERSION" >/dev/null; then
+            echo "RELEASE_TAG=v$APP_VERSION-build.$BUILD_NUMBER" >> "$GITHUB_ENV"
+            echo "RELEASE_KIND=prerelease" >> "$GITHUB_ENV"
+          else
+            echo "RELEASE_TAG=v$APP_VERSION" >> "$GITHUB_ENV"
+            echo "RELEASE_KIND=release" >> "$GITHUB_ENV"
+          fi
 
       - name: Select Xcode 26
         run: |
@@ -62,7 +74,7 @@ jobs:
           test -x Payload/iPAN.app/iPAN
           # 与 Xcode 导出 IPA 一样用 ditto 打包（文件名为 UTF-8 字节，中文模板名可正常安装）
           ditto -c -k --norsrc --keepParent Payload iPAN-unsigned.ipa
-          cp iPAN-unsigned.ipa "iPAN-$APP_VERSION-unsigned.ipa"
+          cp iPAN-unsigned.ipa "iPAN-${RELEASE_TAG#v}-unsigned.ipa"
           ls -lh iPAN-*.ipa
 
       - name: Upload IPA
@@ -79,29 +91,39 @@ jobs:
           path: xcodebuild.log
           if-no-files-found: ignore
 
-      # 每次推送都发布一个 Release，附带未签名 IPA
+      # 每次推送都发布：新版本号发正式版（Latest），同一版本号的后续推送发带构建号的预览版
       - name: Publish release
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # 上一个 Release 以来的全部提交；第一次发布时列出全部提交
           PREV_TAG=$(git describe --tags --match 'v*' --abbrev=0 HEAD 2>/dev/null || true)
           RANGE=${PREV_TAG:+$PREV_TAG..}HEAD
           {
-            echo "## iPAN $APP_VERSION"
-            echo
-            echo "- 分支：\`${GITHUB_REF_NAME}\`"
-            echo "- 提交：${GITHUB_SHA}"
+            if [ "$RELEASE_KIND" = "release" ] && [ -f "release-notes/$APP_VERSION.md" ]; then
+              cat "release-notes/$APP_VERSION.md"
+              echo
+            else
+              echo "## iPAN $APP_VERSION（构建 $BUILD_NUMBER）"
+              echo
+            fi
+            echo "- 分支：\`${GITHUB_REF_NAME}\` · 提交：${GITHUB_SHA}"
             echo "- 构建：Xcode $(xcodebuild -version | head -n 1 | awk '{print $2}')，未签名，安装前需自行签名"
             echo
-            echo "### 本次更改${PREV_TAG:+（自 $PREV_TAG 起）}"
+            echo "### 提交记录${PREV_TAG:+（自 $PREV_TAG 起）}"
             echo
-            git log --no-merges --format='#### %s%n%n%b' "$RANGE" | grep -v -E '^(Co-Authored-By|Claude-Session):'
+            git log --no-merges --format='- %s' "$RANGE"
           } > release-notes.md
           cat release-notes.md
-          gh release create "v$APP_VERSION" "iPAN-$APP_VERSION-unsigned.ipa" \
+          FLAGS=(--latest)
+          TITLE="iPAN $APP_VERSION"
+          if [ "$RELEASE_KIND" = "prerelease" ]; then
+            FLAGS=(--prerelease)
+            TITLE="iPAN $APP_VERSION（构建 $BUILD_NUMBER）"
+          fi
+          gh release create "$RELEASE_TAG" "iPAN-${RELEASE_TAG#v}-unsigned.ipa" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "iPAN $APP_VERSION" \
-            --notes-file release-notes.md
+            --title "$TITLE" \
+            --notes-file release-notes.md \
+            "${FLAGS[@]}"

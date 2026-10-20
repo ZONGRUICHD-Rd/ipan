@@ -18,6 +18,8 @@ final class CameraModel: ObservableObject {
         let pixelSize: CGSize
         let focal: Int
         let note: String?
+        /// 成片 HEIC 的临时文件，用于分享
+        let fileURL: URL?
     }
 
     let settings: AppSettings
@@ -32,10 +34,13 @@ final class CameraModel: ObservableObject {
     @Published var thumbnail: UIImage?
     @Published var lastShot: LastShot?
     @Published var processingCount = 0
-    @Published var toast: String?
+    /// 从灵动岛弹出的消息
+    @Published var island: IslandMessage?
+    /// 每次按快门 +1，驱动灵动岛的「快门」动效
+    @Published var islandPulse = 0
     @Published var focusPoint: CGPoint?
 
-    private var toastTask: Task<Void, Never>?
+    private var islandTask: Task<Void, Never>?
 
     init(settings: AppSettings) {
         self.settings = settings
@@ -127,7 +132,7 @@ final class CameraModel: ObservableObject {
 
         observeInterfaceOrientation()
         if safeMode {
-            showToast("检测到上次启动异常，已暂时关闭 Camera Control 与光圈功能")
+            showToast("上次启动异常，已暂时关闭 Camera Control 与光圈", warning: true)
         } else {
             setupCameraControls()
             camera.setAperture(settings.aperture > 0 ? Float(settings.aperture) : nil)
@@ -164,7 +169,7 @@ final class CameraModel: ObservableObject {
     func select(mode newMode: CaptureMode) {
         guard newMode != mode else { return }
         if newMode == .stitch && !camera.dualWideAvailable {
-            showToast("这台设备没有超广角镜头")
+            showToast("这台设备没有超广角镜头", warning: true)
             return
         }
         mode = newMode
@@ -208,13 +213,20 @@ final class CameraModel: ObservableObject {
             onFocal: { [weak self] index in
                 guard let self, focals.indices.contains(index) else { return }
                 self.select(focal: focals[index])
+                let lens = self.plan.lens == .main ? "主摄" : "长焦"
+                self.announce(IslandMessage(kind: .info, title: "\(focals[index].millimeters)mm",
+                                            detail: "\(lens) · 65:24", symbol: "camera.aperture"))
             },
             onLook: { [weak self] index in
                 guard let self, films.indices.contains(index) else { return }
                 self.setFilm(films[index])
+                self.announce(IslandMessage(kind: .info, title: films[index].title, symbol: "camera.filters"))
             },
             onAperture: { [weak self] value in
-                self?.setAperture(value, fromControl: true)
+                guard let self else { return }
+                self.setAperture(value, fromControl: true)
+                self.announce(IslandMessage(kind: .info, title: value.map { "ƒ" + VariableAperture.label($0) } ?? "光圈自动",
+                                            detail: "光圈优先 · 快门与 ISO 自动", symbol: "camera.aperture"))
             }
         )
     }
@@ -265,7 +277,7 @@ final class CameraModel: ObservableObject {
 
     func shutter() {
         guard canShoot else {
-            if mode == .stitch && !camera.isLandscape { showToast("双摄拼接需要横置手机") }
+            if mode == .stitch && !camera.isLandscape { showToast("双摄拼接需要横置手机", warning: true) }
             return
         }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -283,15 +295,24 @@ final class CameraModel: ObservableObject {
         let captureMode = mode
         let focalRatio = camera.dualWideFocalRatio()
         processingCount += 1
+        let detail = "\(captureMode == .stitch ? "WIDE" : "\(plan.focal.millimeters)mm") · \(settings.filmMode.caption)"
 
         camera.capture(willCapture: { [weak self] in
-            self?.runDevelopAnimation(snapshot)
+            guard let self else { return }
+            self.islandPulse &+= 1
+            self.runDevelopAnimation(snapshot)
+            // 显影动画结束后还没冲洗完，就在灵动岛里显示进度
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(1700))
+                guard let self, self.processingCount > 0, self.island == nil || self.island?.kind == .info else { return }
+                self.announce(IslandMessage(kind: .processing, title: "冲洗中", detail: detail, image: snapshot))
+            }
         }, completion: { [weak self] result in
             guard let self else { return }
             switch result {
             case .failure(let error):
                 self.processingCount -= 1
-                self.showToast("拍摄失败：\(error.localizedDescription)")
+                self.showToast("拍摄失败：\(error.localizedDescription)", warning: true)
             case .success(let photos):
                 Task { await self.process(photos, mode: captureMode, options: options, focalRatio: focalRatio) }
             }
@@ -324,12 +345,17 @@ final class CameraModel: ObservableObject {
                 }
             }.value
             try await PhotoProcessor.saveToLibrary(output.0.heic, original: output.3)
-            lastShot = LastShot(preview: output.0.preview, pixelSize: output.0.pixelSize, focal: output.1, note: output.2)
+            let fileURL = Self.writeShareFile(output.0.heic)
+            lastShot = LastShot(preview: output.0.preview, pixelSize: output.0.pixelSize, focal: output.1, note: output.2, fileURL: fileURL)
             if developPhase == .idle { thumbnail = output.0.preview }
             let px = output.0.pixelSize
-            showToast("已保存 HEIC · \(Int(px.width))×\(Int(px.height))" + (output.2.map { " · \($0)" } ?? ""))
+            let megapixels = px.width * px.height / 1_000_000
+            announce(IslandMessage(kind: .saved, title: "已存入相册",
+                                   detail: String(format: "HEIC · %ld×%ld · %.1fMP", Int(px.width), Int(px.height), megapixels)
+                                       + (output.2.map { "\n拼接：\($0)" } ?? ""),
+                                   image: output.0.preview))
         } catch {
-            showToast("处理失败：\(error.localizedDescription)")
+            showToast("处理失败：\(error.localizedDescription)", warning: true)
         }
     }
 
@@ -356,15 +382,43 @@ final class CameraModel: ObservableObject {
         }
     }
 
-    // MARK: 提示
+    // MARK: 灵动岛消息
 
-    func showToast(_ text: String) {
-        toastTask?.cancel()
-        withAnimation(.snappy) { toast = text }
-        toastTask = Task {
-            try? await Task.sleep(for: .seconds(2.2))
-            guard !Task.isCancelled else { return }
-            withAnimation(.snappy) { toast = nil }
+    /// 显示一条从灵动岛弹出的消息；有时长的消息到时自动收回
+    func announce(_ message: IslandMessage) {
+        islandTask?.cancel()
+        island = message
+        guard let duration = message.duration else { return }
+        let id = message.id
+        islandTask = Task {
+            try? await Task.sleep(for: .seconds(duration))
+            guard !Task.isCancelled, self.island?.id == id else { return }
+            self.island = nil
+        }
+    }
+
+    func dismissIsland() {
+        islandTask?.cancel()
+        island = nil
+    }
+
+    func showToast(_ text: String, warning: Bool = false) {
+        announce(IslandMessage(kind: warning ? .warning : .info, title: text))
+    }
+
+    /// 把成片写到临时目录，供分享使用（只保留最近一张）
+    private static func writeShareFile(_ data: Data) -> URL? {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("share", isDirectory: true)
+        try? FileManager.default.removeItem(at: dir)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd_HHmmss"
+        let url = dir.appendingPathComponent("iPAN_\(formatter.string(from: Date())).heic")
+        do {
+            try data.write(to: url)
+            return url
+        } catch {
+            return nil
         }
     }
 }

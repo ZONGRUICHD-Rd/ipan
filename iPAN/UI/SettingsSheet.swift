@@ -1,6 +1,17 @@
 import AVFoundation
 import SwiftUI
 
+enum AppInfo {
+    static var versionText: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = info?["CFBundleVersion"] as? String ?? "1"
+        return "\(version)（\(build)）"
+    }
+
+    static let repositoryURL = URL(string: "https://github.com/ZONGRUICHD-Rd/ipan")!
+}
+
 struct SettingsSheet: View {
     @ObservedObject var settings: AppSettings
     let lineup: LensLineup
@@ -19,15 +30,17 @@ struct SettingsSheet: View {
                     }
                     .pickerStyle(.segmented)
                     Toggle("XPan 暗角", isOn: $settings.vignette)
-                    Picker("竖屏窗口时输出", selection: $settings.portraitOutput) {
-                        ForEach(PortraitOutput.allCases) { Text($0.title).tag($0) }
-                    }
                     Toggle("快门负片显影动画", isOn: $settings.developAnimation)
                     Toggle("同时保存 48MP 原图", isOn: $settings.saveOriginal)
+                    if UIDevice.current.userInterfaceIdiom == .pad {
+                        Picker("竖向窗口输出", selection: $settings.portraitOutput) {
+                            ForEach(PortraitOutput.allCases) { Text($0.title).tag($0) }
+                        }
+                    }
                 } header: {
                     Text("拍摄")
                 } footer: {
-                    Text("默认横屏，以最高分辨率（48MP）拍摄，裁切后按实际像素输出 HEIC，不做插值放大。横屏时 65:24 沿传感器长边裁切，像素最多。")
+                    Text("HNCS 为默认色彩；XPan 胶片带抬起的黑位与暖调；原色不做任何调色。")
                 }
 
                 Section {
@@ -39,30 +52,50 @@ struct SettingsSheet: View {
                         Toggle("显示品牌 Logo", isOn: $settings.watermarkLogo)
                     }
                 } header: {
-                    Text("水印（semi-utils）")
-                } footer: {
-                    Text("模板、Logo 与字体来自 ZONGRUICHD-Rd/semi-utils-ios-support，渲染逻辑为其 Python 处理管道的 Swift 移植。")
+                    Text("水印")
                 }
 
-                Section("焦段与输出分辨率") {
+                Section {
                     ForEach(FocalLength.all) { focal in
                         let plan = lineup.plan(for: focal)
                         HStack {
                             Text("\(focal.millimeters)mm").monospacedDigit()
-                            Spacer()
                             Text(plan.lens == .main ? "主摄" : "长焦")
+                                .font(.footnote)
                                 .foregroundStyle(.secondary)
+                            Spacer()
                             Text(resolution(for: plan))
                                 .font(.system(.footnote, design: .monospaced))
                                 .foregroundStyle(.secondary)
                         }
                     }
+                } header: {
+                    Text("输出规格")
+                } footer: {
+                    Text("以传感器最高分辨率（48MP）拍摄，裁成 65:24 后按实际像素输出苹果原生 HEIC，不做插值放大。")
                 }
 
-                Section("关于调色盘") {
-                    Text("iOS 的「摄影风格」调色盘（色调 / 色彩 / 调色板）目前没有提供给第三方 App 的读取或设置接口，AVFoundation 里也没有对应的拍摄参数。iPAN 内置了一套交互一致的调色盘，用 Core Image 实时渲染，预览与成片一致。")
+                Section {
+                    LabeledContent("版本", value: AppInfo.versionText)
+                    DisclosureGroup("色彩与调色盘") {
+                        Text("HNCS 是按哈苏公开描述（自然肤色、细腻影调过渡、胶片曲线、克制的饱和度）做的风格复刻，并非哈苏官方算法。iOS 的「摄影风格」调色盘没有开放给第三方 App，iPAN 内置了交互一致的调色盘，预览与成片一致。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    DisclosureGroup("致谢") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("水印：semi-utils（Apache License 2.0），模板、Logo 与字体来自 ZONGRUICHD-Rd/semi-utils-ios-support")
+                            Text("字体：阿里巴巴普惠体、Roboto")
+                            Text("画幅致敬：Hasselblad XPan")
+                        }
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    }
+                    Link(destination: AppInfo.repositoryURL) {
+                        Label("项目主页", systemImage: "arrow.up.right.square")
+                    }
+                } header: {
+                    Text("关于")
                 }
             }
             .navigationTitle("设置")
@@ -117,6 +150,12 @@ struct ShotReview: View {
                     .padding(.vertical, 8)
                     .glassEffect(.regular, in: Capsule())
                 Spacer()
+                if let url = shot.fileURL {
+                    ShareLink(item: url) {
+                        Image(systemName: "square.and.arrow.up").font(.system(size: 15, weight: .bold)).padding(10)
+                    }
+                    .buttonStyle(.glass)
+                }
                 Button {
                     dismiss()
                 } label: {

@@ -87,6 +87,26 @@ struct CameraLayout {
         return CGRect(x: 12, y: minY, width: size.width - 24, height: max(0, maxY - minY))
     }
 
+    /// 灵动岛位置。只有全屏运行的 iPhone、并且安全区显示出灵动岛（横屏两侧 ≥ 55pt / 竖屏顶部 ≥ 51pt）时才认为有；
+    /// 否则在取景区上方用一个浮动的黑色胶囊代替。
+    var island: IslandGeometry {
+        let hasIsland = isPhone && !isWindowed &&
+            (isLandscape ? max(safe.leading, safe.trailing) >= 55 : safe.top >= 51)
+        let L = IslandGeometry.length, T = IslandGeometry.thickness, g = IslandGeometry.gap
+        if hasIsland, isLandscape, let onLeading = islandOnLeading {
+            let x = onLeading ? g : size.width - g - T
+            return IslandGeometry(anchor: CGRect(x: x, y: size.height / 2 - L / 2, width: T, height: L),
+                                  edge: onLeading ? .leading : .trailing, isHardware: true, screen: size)
+        }
+        if hasIsland, !isLandscape {
+            return IslandGeometry(anchor: CGRect(x: size.width / 2 - L / 2, y: g, width: L, height: T),
+                                  edge: .top, isHardware: true, screen: size)
+        }
+        let region = bandRegion
+        return IslandGeometry(anchor: CGRect(x: region.midX - 50, y: top + 2, width: 100, height: 30),
+                              edge: .top, isHardware: false, screen: size)
+    }
+
     /// 把指定宽高比的窗口放进可用区域并居中，返回全屏归一化坐标
     func band(ratio: CGFloat) -> CGRect {
         let region = bandRegion
@@ -154,16 +174,10 @@ private struct CameraScreenContent: View {
                         .transition(.move(edge: layout.isLandscape ? .trailing : .bottom).combined(with: .opacity))
                 }
 
-                if let toast = model.toast {
-                    Text(toast)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 9)
-                        .glassEffect(.regular, in: Capsule())
-                        .position(x: layout.bandRegion.midX, y: layout.top + 26)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                        .allowsHitTesting(false)
+                // 灵动岛：快门动效、冲洗进度、保存完成（点按查看）、各种提示
+                DynamicIslandOverlay(geometry: layout.island, message: model.island, pulse: model.islandPulse) {
+                    model.dismissIsland()
+                    if model.lastShot != nil { showReview = true }
                 }
             }
             .onAppear {
@@ -196,11 +210,13 @@ private struct CameraScreenContent: View {
     private var caption: String {
         switch model.mode {
         case .ipan:
-            let aperture = camera.apertureSupport != nil && camera.liveAperture > 0
-                ? "  ƒ\(VariableAperture.label(camera.liveAperture))" : ""
-            return "iPAN  \(model.plan.focal.millimeters)mm  65:24  \(settings.filmMode.caption)\(aperture)"
+            var parts = ["\(model.plan.focal.millimeters)mm", "65:24", settings.filmMode.caption]
+            if camera.apertureSupport != nil && camera.liveAperture > 0 {
+                parts.append("ƒ" + VariableAperture.label(camera.liveAperture))
+            }
+            return parts.joined(separator: "  ·  ")
         case .stitch:
-            return "iPAN WIDE β  双摄拼接  65:24"
+            return ["WIDE β", "双摄拼接", "65:24"].joined(separator: "  ·  ")
         }
     }
 
@@ -243,11 +259,26 @@ private struct CameraScreenContent: View {
             }
 
             if camera.authorization == .denied {
-                VStack(spacing: 10) {
-                    Image(systemName: "camera.fill").font(.largeTitle)
-                    Text("请在「设置」中允许 iPAN 使用相机")
+                VStack(spacing: 14) {
+                    Image(systemName: "camera.aperture")
+                        .font(.system(size: 40, weight: .light))
+                        .foregroundStyle(OPPOStyle.accent)
+                    Text("需要相机权限")
+                        .font(.system(size: 18, weight: .semibold))
+                    Text("iPAN 用相机拍摄 65:24 宽幅照片，照片只会保存到你的相册。")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("前往设置") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    }
+                    .buttonStyle(.glassProminent)
+                    .tint(OPPOStyle.accent)
                 }
                 .foregroundStyle(.white)
+                .padding(28)
+                .frame(maxWidth: 360)
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 30))
                 .position(x: screen.width / 2, y: screen.height / 2)
             }
         }

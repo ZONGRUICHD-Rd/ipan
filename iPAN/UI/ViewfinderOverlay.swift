@@ -35,11 +35,22 @@ struct PanoramaMask: View {
                         .position(x: rect.midX, y: rect.midY - h / 2 + 10)
                 }
 
-                Text(caption)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .fixedSize()
-                    .offset(x: rect.minX + 2, y: max(0, rect.minY - 20))
+                // 窗口上方：左边是拍摄信息，右边是品牌标
+                HStack(alignment: .firstTextBaseline) {
+                    Text(caption)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .kerning(0.4)
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Spacer(minLength: 8)
+                    Text("iPAN")
+                        .font(.system(size: 12, weight: .heavy, design: .rounded))
+                        .kerning(1.2)
+                        .foregroundStyle(OPPOStyle.accent)
+                }
+                .frame(width: max(0, rect.width - 4))
+                .offset(x: rect.minX + 2, y: max(0, rect.minY - 20))
             }
             .animation(.spring(response: 0.45, dampingFraction: 0.85), value: band)
         }

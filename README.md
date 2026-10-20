@@ -25,6 +25,7 @@ OPPO / 一加的 XPan 模式并不拼接画面，而是**从单颗镜头的全�
 - **负片显影动效**（仿 OPPO XPAN）：按下快门 → 取景窗口快门帘黑屏 → 画面以 C-41 彩色负片（反相 + 橙色片基 + 颗粒）出现 → 由中心向外显影成正片 → 飞入左下角缩略图。着色器见 `iPAN/UI/Shaders/FilmDevelop.metal`。
 - **色彩**：HNCS（默认，仿哈苏自然色彩，见下文）/ XPan 胶片 / 原色 / 黑白，以及可选的广角边缘失光（暗角）。预览用 Core Image + Metal 实时渲染，所见即所得。
 - **可变光圈**（iPhone 18 Pro 主摄 f/1.48–f/4.0，需要 iOS 27）：左侧工具栏的 ƒ 按钮打开光圈面板，可选自动或系统推荐的档位；采用光圈优先，快门与 ISO 仍自动调整。Camera Control 里也有「光圈」选择器。切到长焦或双摄拼接时隐藏（这些镜头是固定光圈）。iOS 27 才有光圈 API，而工程按要求用 Xcode 26（iOS 26 SDK）构建，所以通过 Objective-C 运行时调用（`iPAN/Camera/VariableAperture.swift`），在不支持的系统上自动隐藏。
+- **灵动岛互动**：按快门时灵动岛像快门一样闪一下；冲洗较久时从灵动岛展开负片缩略图与进度；保存完成后展开成片缩略图和分辨率，点按打开预览（可分享 HEIC）；焦段 / 色彩 / 光圈切换和各种提示都从灵动岛弹出。系统不提供灵动岛坐标，按 126×37pt 估算，收起时不绘制以免错位；在容器小窗或无灵动岛的设备上改为取景区上方的浮动胶囊。
 - **Camera Control 按键**（iPhone 16 及以后）：完全按下拍照（音量键同样可以）；轻按弹出控件，轻点两下切换：焦段（24–200mm）、曝光补偿（系统滑块）、色彩、光圈（支持的机型）。控件全屏展开时界面会自动收起。
 - **调色盘**：底色风格 + 色调/色彩二维盘 + 调色板强度，交互仿 iOS「摄影风格」（原因见下文）。
 - **水印**：使用 [semi-utils-ios-support](https://github.com/ZONGRUICHD-Rd/semi-utils-ios-support)（以 git submodule 放在 `Vendor/semi-utils`）。它的模板、Logo、字体原样打包进 App，Python 处理管道（Jinja2 模板 + filters/generators/mergers）移植到了 Swift（`iPAN/Watermark/SemiUtils`）。全部 7 个模板的渲染结果已和真实 Jinja2 逐项比对一致。
@@ -61,7 +62,7 @@ GitHub Actions（`.github/workflows/build-ipa.yml`）在 `macos-26` runner 上�
 2. `xcodegen generate` 生成工程（`project.yml`）
 3. `xcodebuild ... CODE_SIGNING_ALLOWED=NO`
 4. 打包 `Payload/iPAN.app` 为 `iPAN-unsigned.ipa` 并作为 artifact 上传
-5. 每次推送都会发布一个 GitHub Release（tag `v0.1.<构建序号>`），附带 `iPAN-0.1.<构建序号>-unsigned.ipa`，说明里是本次提交的更改；App 的版本号与构建号同步
+5. 每次推送都会发布 GitHub Release：版本号来自根目录的 `VERSION` 文件。新版本号第一次构建时发**正式版**（tag `v1.0.0`，标记为 Latest，说明取自 `release-notes/<版本>.md`）；同一版本号之后的推送发**预览版**（tag `v1.0.0-build.<构建序号>`）。App 内的版本号与构建号同步。发下一个正式版时改 `VERSION` 并添加对应的 release notes 即可
 
 本地构建：
 
