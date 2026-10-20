@@ -14,7 +14,7 @@ struct SettingsSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("胶片", selection: $settings.filmMode) {
+                    Picker("色彩", selection: $settings.filmMode) {
                         ForEach(FilmMode.allCases) { Text($0.title).tag($0) }
                     }
                     .pickerStyle(.segmented)

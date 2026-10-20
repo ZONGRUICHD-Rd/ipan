@@ -131,6 +131,10 @@ enum FilmLook {
 
     static func applyFilm(_ input: CIImage, _ film: FilmMode) -> CIImage {
         switch film {
+        case .hncs:
+            return HNCS.apply(input)
+        case .natural:
+            return input
         case .color:
             // 轻微暖调 + 抬黑位的胶片曲线
             let curve = CIFilter.toneCurve()

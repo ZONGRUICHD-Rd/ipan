@@ -40,6 +40,8 @@ final class CameraController: NSObject, ObservableObject {
     @Published private(set) var photoDimensions: CMVideoDimensions?
     @Published private(set) var dualWideAvailable = false
     @Published private(set) var lastError: String?
+    /// Camera Control 的控件是否全屏展开（展开时界面收起）
+    @Published private(set) var controlsFullscreen = false
 
     let session = AVCaptureSession()
     let frames = FrameStore()
@@ -53,6 +55,10 @@ final class CameraController: NSObject, ObservableObject {
     /// 只在 sessionQueue 上读写
     private var rotationAngle: CGFloat = 0
     private var inFlight: [Int64: PhotoCaptureDelegate] = [:]
+    // Camera Control 控件（只在 sessionQueue 上访问）
+    private var focalPicker: AVCaptureIndexPicker?
+    private var lookPicker: AVCaptureIndexPicker?
+    private var exposureSlider: AVCaptureSystemExposureBiasSlider?
 
     var currentDevice: AVCaptureDevice? { input?.device }
 
@@ -171,6 +177,8 @@ final class CameraController: NSObject, ObservableObject {
             if connection.isVideoMirroringSupported { connection.isVideoMirrored = false }
         }
 
+        installControls(for: device)
+
         do {
             try device.lockForConfiguration()
             if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
@@ -205,6 +213,61 @@ final class CameraController: NSObject, ObservableObject {
             device.activeFormat = best
             device.unlockForConfiguration()
         } catch {}
+    }
+
+    // MARK: Camera Control
+
+    /// 创建 Camera Control 的控件：焦段、曝光补偿（系统滑块）、色彩。选择结果在主线程回调。
+    func setupCameraControls(focalTitles: [String], focalIndex: Int, lookTitles: [String], lookIndex: Int,
+                             onFocal: @escaping (Int) -> Void, onLook: @escaping (Int) -> Void) {
+        sessionQueue.async {
+            guard self.session.supportsControls else { return }
+            let focal = AVCaptureIndexPicker("焦段", symbolName: "camera.aperture", localizedIndexTitles: focalTitles)
+            focal.selectedIndex = focalIndex
+            focal.setActionQueue(.main) { onFocal($0) }
+            let look = AVCaptureIndexPicker("色彩", symbolName: "camera.filters", localizedIndexTitles: lookTitles)
+            look.selectedIndex = lookIndex
+            look.setActionQueue(.main) { onLook($0) }
+            self.focalPicker = focal
+            self.lookPicker = look
+            // 系统只有在设置了 controls delegate 后才会展示控件
+            self.session.setControlsDelegate(self, queue: .main)
+            self.session.beginConfiguration()
+            self.installControls(for: self.currentDevice)
+            self.session.commitConfiguration()
+        }
+    }
+
+    /// 在 sessionQueue、begin/commitConfiguration 之间调用。
+    /// 曝光滑块绑定具体镜头，换镜头时只替换它；两个选择器保持不动，避免正在操作的控件被移除。
+    private func installControls(for device: AVCaptureDevice?) {
+        guard session.supportsControls, let focalPicker, let lookPicker else { return }
+        if let old = exposureSlider, session.controls.contains(where: { $0 === old }) {
+            session.removeControl(old)
+        }
+        exposureSlider = nil
+        for picker in [focalPicker, lookPicker] where !session.controls.contains(where: { $0 === picker }) {
+            if session.canAddControl(picker) { session.addControl(picker) }
+        }
+        if let device {
+            let slider = AVCaptureSystemExposureBiasSlider(device: device)
+            if session.canAddControl(slider) {
+                session.addControl(slider)
+                exposureSlider = slider
+            }
+        }
+    }
+
+    /// 界面上改动后同步 Camera Control 的选中项
+    func syncControls(focalIndex: Int?, lookIndex: Int?) {
+        sessionQueue.async {
+            if let focalIndex, let picker = self.focalPicker, picker.selectedIndex != focalIndex {
+                picker.selectedIndex = focalIndex
+            }
+            if let lookIndex, let picker = self.lookPicker, picker.selectedIndex != lookIndex {
+                picker.selectedIndex = lookIndex
+            }
+        }
     }
 
     // MARK: 方向
@@ -296,6 +359,22 @@ final class CameraController: NSObject, ObservableObject {
         let tu = tan(Double(uw.activeFormat.videoFieldOfView) * .pi / 360)
         guard tw > 0 else { return 24.0 / 13.0 }
         return CGFloat(tu / tw)
+    }
+}
+
+extension CameraController: AVCaptureSessionControlsDelegate {
+    func sessionControlsDidBecomeActive(_ session: AVCaptureSession) {}
+
+    func sessionControlsWillEnterFullscreenAppearance(_ session: AVCaptureSession) {
+        controlsFullscreen = true
+    }
+
+    func sessionControlsWillExitFullscreenAppearance(_ session: AVCaptureSession) {
+        controlsFullscreen = false
+    }
+
+    func sessionControlsDidBecomeInactive(_ session: AVCaptureSession) {
+        controlsFullscreen = false
     }
 }
 

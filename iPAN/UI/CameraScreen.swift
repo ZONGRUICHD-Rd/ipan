@@ -1,3 +1,4 @@
+import AVKit
 import SwiftUI
 import UIKit
 
@@ -131,11 +132,16 @@ private struct CameraScreenContent: View {
 
                 viewfinder(screen: proxy.size)
 
-                if layout.isLandscape {
-                    landscapeControls(layout)
-                } else {
-                    portraitControls(layout)
+                Group {
+                    if layout.isLandscape {
+                        landscapeControls(layout)
+                    } else {
+                        portraitControls(layout)
+                    }
                 }
+                // Camera Control 的控件全屏展开时收起界面，让取景更干净（系统建议的做法）
+                .opacity(camera.controlsFullscreen ? 0 : 1)
+                .animation(.easeInOut(duration: 0.2), value: camera.controlsFullscreen)
 
                 if showPalette {
                     paletteOverlay(layout)
@@ -163,6 +169,10 @@ private struct CameraScreenContent: View {
         }
         .ignoresSafeArea()
         .onAppear { model.start() }
+        // Camera Control 完全按下（以及音量键）拍照
+        .onCameraCaptureEvent(isEnabled: camera.authorization == .authorized) { event in
+            if event.phase == .ended { model.shutter() }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { camera.resume() } else if phase == .background { camera.stop() }
         }
@@ -180,7 +190,7 @@ private struct CameraScreenContent: View {
     private var caption: String {
         switch model.mode {
         case .ipan:
-            return "iPAN  \(model.plan.focal.millimeters)mm  65:24  \(settings.filmMode == .color ? "COLOR" : "B&W")"
+            return "iPAN  \(model.plan.focal.millimeters)mm  65:24  \(settings.filmMode.caption)"
         case .stitch:
             return "iPAN WIDE β  双摄拼接  65:24"
         }
@@ -374,9 +384,17 @@ private struct CameraScreenContent: View {
         OPPOCircleButton {
             model.toggleFilm()
         } label: {
-            Text(settings.filmMode == .color ? "C" : "BW")
-                .font(.system(size: 14, weight: .heavy, design: .rounded))
-                .foregroundStyle(.white)
+            VStack(spacing: 0) {
+                Text(settings.filmMode.badge)
+                    .font(.system(size: 15, weight: .heavy, design: .rounded))
+                Text(settings.filmMode.title)
+                    .font(.system(size: 7, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .opacity(0.75)
+            }
+            .foregroundStyle(settings.filmMode == .hncs ? OPPOStyle.accent : .white)
+            .frame(width: 44)
         }
     }
 

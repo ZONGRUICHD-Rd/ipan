@@ -39,6 +39,12 @@ final class CameraModel: ObservableObject {
 
     init(settings: AppSettings) {
         self.settings = settings
+        // 旧版本默认是「XPan 胶片」，升级后默认改为 HNCS（只迁移一次，之后尊重用户选择）
+        let key = "migratedToHNCS"
+        if !UserDefaults.standard.bool(forKey: key) {
+            if settings.filmMode == .color { settings.filmMode = .hncs }
+            UserDefaults.standard.set(true, forKey: key)
+        }
     }
 
     var plan: FocalPlan { camera.lineup.plan(for: settings.focal) }
@@ -106,6 +112,7 @@ final class CameraModel: ObservableObject {
 
     func start() {
         observeInterfaceOrientation()
+        setupCameraControls()
         camera.start(with: currentConfiguration)
         syncPreview()
     }
@@ -131,6 +138,7 @@ final class CameraModel: ObservableObject {
         if mode != .ipan { mode = .ipan }
         camera.configure(currentConfiguration)
         syncPreview()
+        syncCameraControls()
         UISelectionFeedbackGenerator().selectionChanged()
     }
 
@@ -147,9 +155,42 @@ final class CameraModel: ObservableObject {
     }
 
     func toggleFilm() {
-        settings.filmMode = settings.filmMode == .color ? .mono : .color
-        syncPreview()
+        setFilm(settings.filmMode.next)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+
+    func setFilm(_ film: FilmMode) {
+        settings.filmMode = film
+        syncPreview()
+        syncCameraControls()
+    }
+
+    // MARK: 相机控制（Camera Control 按键）
+
+    /// 轻按 Camera Control 弹出的控件：焦段、曝光补偿（系统）、色彩。完全按下由界面的 onCameraCaptureEvent 触发快门。
+    private func setupCameraControls() {
+        let focals = FocalLength.all
+        let films = FilmMode.allCases
+        camera.setupCameraControls(
+            focalTitles: focals.map { "\($0.millimeters)mm" },
+            focalIndex: focals.firstIndex(of: settings.focal) ?? 0,
+            lookTitles: films.map(\.title),
+            lookIndex: films.firstIndex(of: settings.filmMode) ?? 0,
+            onFocal: { [weak self] index in
+                guard let self, focals.indices.contains(index) else { return }
+                self.select(focal: focals[index])
+            },
+            onLook: { [weak self] index in
+                guard let self, films.indices.contains(index) else { return }
+                self.setFilm(films[index])
+            }
+        )
+    }
+
+    /// 界面上改了焦段 / 色彩后，同步到 Camera Control 的选中项
+    func syncCameraControls() {
+        camera.syncControls(focalIndex: FocalLength.all.firstIndex(of: settings.focal),
+                            lookIndex: FilmMode.allCases.firstIndex(of: settings.filmMode))
     }
 
     // MARK: 对焦

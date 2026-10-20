@@ -1,13 +1,48 @@
 import SwiftUI
 
-/// XPan 原版提供两种胶片：彩色与黑白。
+/// 色彩：HNCS（仿哈苏自然色彩，默认）、XPan 胶片、苹果原色、黑白。
+/// rawValue 沿用旧版本的 "color" / "mono"，升级后设置不丢。
 enum FilmMode: String, CaseIterable, Identifiable {
+    case hncs
     case color
+    case natural
     case mono
 
     var id: String { rawValue }
-    var title: String { self == .color ? "彩色" : "黑白" }
-    var badge: String { self == .color ? "C" : "BW" }
+
+    var title: String {
+        switch self {
+        case .hncs: return "HNCS"
+        case .color: return "XPan 胶片"
+        case .natural: return "原色"
+        case .mono: return "黑白"
+        }
+    }
+
+    /// 快门旁圆钮上的短标
+    var badge: String {
+        switch self {
+        case .hncs: return "H"
+        case .color: return "X"
+        case .natural: return "N"
+        case .mono: return "BW"
+        }
+    }
+
+    /// 取景窗口上方的信息
+    var caption: String {
+        switch self {
+        case .hncs: return "HNCS"
+        case .color: return "XPAN FILM"
+        case .natural: return "NATURAL"
+        case .mono: return "B&W"
+        }
+    }
+
+    var next: FilmMode {
+        let all = FilmMode.allCases
+        return all[(all.firstIndex(of: self)! + 1) % all.count]
+    }
 }
 
 /// 拍摄模式（底部 OPPO 风格的模式轮播）
@@ -33,7 +68,7 @@ enum PortraitOutput: String, CaseIterable, Identifiable {
 }
 
 final class AppSettings: ObservableObject {
-    @AppStorage("filmMode") var filmMode: FilmMode = .color
+    @AppStorage("filmMode") var filmMode: FilmMode = .hncs
     @AppStorage("focal") var focalMillimeters: Int = FocalLength.default.millimeters
     @AppStorage("vignette") var vignette: Bool = true
     @AppStorage("portraitOutput") var portraitOutput: PortraitOutput = .landscapeBand
