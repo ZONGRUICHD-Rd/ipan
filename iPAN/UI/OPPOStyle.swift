@@ -5,6 +5,8 @@ enum OPPOStyle {
     /// ColorOS 相机选中态的暖黄色
     static let accent = Color(red: 1.0, green: 0.80, blue: 0.24)
     static let chipFill = Color.black.opacity(0.42)
+    /// 选中焦段的底色：纯黑背景上也要能看出圆钮
+    static let selectedChipFill = Color.white.opacity(0.16)
     static let secondaryText = Color.white.opacity(0.62)
     static let font = Font.system(size: 13, weight: .semibold, design: .rounded)
 }
@@ -79,8 +81,8 @@ struct OPPOFocalSelector: View {
                         .minimumScaleFactor(0.6)
                         .lineLimit(1)
                         .frame(width: isSelected ? 46 : 34, height: isSelected ? 46 : 34)
-                        .background(Circle().fill(OPPOStyle.chipFill))
-                        .overlay(Circle().stroke(Color.white.opacity(isSelected ? 0.0 : 0.08), lineWidth: 1))
+                        .background(Circle().fill(isSelected ? OPPOStyle.selectedChipFill : OPPOStyle.chipFill))
+                        .overlay(Circle().stroke(isSelected ? OPPOStyle.accent.opacity(0.55) : Color.white.opacity(0.08), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }

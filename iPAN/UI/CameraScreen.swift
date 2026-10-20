@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct CameraScreen: View {
     @StateObject private var model: CameraModel
@@ -19,6 +20,7 @@ struct CameraScreen: View {
 struct CameraLayout {
     let size: CGSize
     let safe: EdgeInsets
+    let orientation: UIInterfaceOrientation
 
     var isLandscape: Bool { size.width > size.height }
 
@@ -31,9 +33,19 @@ struct CameraLayout {
     static let topBar: CGFloat = 60
     static let bottomControls: CGFloat = 220
 
-    /// 两侧控件伸进一部分安全区（灵动岛只占边缘约 48pt），把空间留给取景窗口
-    var leading: CGFloat { max(safe.leading - 20, 10) }
-    var trailing: CGFloat { max(safe.trailing - 24, 8) }
+    /// 灵动岛在哪一侧：界面 landscapeRight 时机身顶部（灵动岛）在左，landscapeLeft 时在右；未知时返回 nil
+    var islandOnLeading: Bool? {
+        switch orientation {
+        case .landscapeRight: return true
+        case .landscapeLeft: return false
+        default: return nil
+        }
+    }
+
+    /// 灵动岛那一侧保留完整安全区（灵动岛横屏时伸进屏幕约 61pt，会挡住控件）；
+    /// 另一侧没有遮挡，只留一点边距，把空间让给取景窗口。方向未知时两侧都保留安全区。
+    var leading: CGFloat { islandOnLeading == false ? max(min(safe.leading, 14), 10) : max(safe.leading, 10) }
+    var trailing: CGFloat { islandOnLeading == true ? max(min(safe.trailing, 14), 8) : max(safe.trailing, 8) }
     var top: CGFloat { max(safe.top, 10) }
     var bottom: CGFloat { max(safe.bottom, 10) }
 
@@ -83,7 +95,7 @@ private struct CameraScreenContent: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let layout = CameraLayout(size: proxy.size, safe: proxy.safeAreaInsets)
+            let layout = CameraLayout(size: proxy.size, safe: proxy.safeAreaInsets, orientation: camera.interfaceOrientation)
             let band = layout.band(ratio: model.bandRatio(isLandscapeUI: layout.isLandscape))
             ZStack(alignment: .topLeading) {
                 Color.black
