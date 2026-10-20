@@ -47,6 +47,7 @@ GitHub Actions（`.github/workflows/build-ipa.yml`）在 `macos-26` runner 上�
 2. `xcodegen generate` 生成工程（`project.yml`）
 3. `xcodebuild ... CODE_SIGNING_ALLOWED=NO`
 4. 打包 `Payload/iPAN.app` 为 `iPAN-unsigned.ipa` 并作为 artifact 上传
+5. 每次推送都会发布一个 GitHub Release（tag `v0.1.<构建序号>`），附带 `iPAN-0.1.<构建序号>-unsigned.ipa`，说明里是本次提交的更改；App 的版本号与构建号同步
 
 本地构建：
 

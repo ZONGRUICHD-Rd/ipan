@@ -10,6 +10,12 @@ jobs:
   build:
     runs-on: macos-26
     timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      # 每次构建一个版本号：0.1.<运行序号>，同时作为 Release 的 tag
+      APP_VERSION: 0.1.${{ github.run_number }}
+      BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,6 +47,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            MARKETING_VERSION="$APP_VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             build | tee xcodebuild.log | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)" || true
           test -d build/Build/Products/Release-iphoneos/iPAN.app
 
@@ -50,7 +58,8 @@ jobs:
           cp -R build/Build/Products/Release-iphoneos/iPAN.app Payload/
           # 与 Xcode 导出 IPA 一样用 ditto 打包（文件名为 UTF-8 字节，中文模板名可正常安装）
           ditto -c -k --norsrc --keepParent Payload iPAN-unsigned.ipa
-          ls -lh iPAN-unsigned.ipa
+          cp iPAN-unsigned.ipa "iPAN-$APP_VERSION-unsigned.ipa"
+          ls -lh iPAN-*.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
@@ -65,3 +74,27 @@ jobs:
           name: xcodebuild-log
           path: xcodebuild.log
           if-no-files-found: ignore
+
+      # 每次推送都发布一个 Release，附带未签名 IPA
+      - name: Publish release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          {
+            echo "## iPAN $APP_VERSION"
+            echo
+            echo "- 分支：\`${GITHUB_REF_NAME}\`"
+            echo "- 提交：${GITHUB_SHA}"
+            echo "- 构建：Xcode $(xcodebuild -version | head -n 1 | awk '{print $2}')，未签名，安装前需自行签名"
+            echo
+            echo "### 本次更改"
+            echo
+            printf '%s\n' "${COMMIT_MESSAGE:-（手动触发构建）}" | grep -v -E '^(Co-Authored-By|Claude-Session):'
+          } > release-notes.md
+          gh release create "v$APP_VERSION" "iPAN-$APP_VERSION-unsigned.ipa" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "iPAN $APP_VERSION" \
+            --notes-file release-notes.md
