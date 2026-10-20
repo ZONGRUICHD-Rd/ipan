@@ -88,7 +88,11 @@ enum WatermarkService {
 
     static func apply(template: String, to image: CGImage, info: CaptureInfo) throws -> CGImage {
         guard let configDir else { throw SUError("App 内缺少 semi-utils 的 config 资源") }
-        let url = configDir.appendingPathComponent("templates").appendingPathComponent(template + ".json")
+        var url = configDir.appendingPathComponent("templates").appendingPathComponent(template + ".json")
+        if !FileManager.default.fileExists(atPath: url.path), let fallback = availableTemplates().first {
+            // 保存的模板名找不到（例如上游改名）时退回第一个可用模板
+            url = configDir.appendingPathComponent("templates").appendingPathComponent(fallback + ".json")
+        }
         let source = try String(contentsOf: url, encoding: .utf8)
         let exif = info.exifDictionary(width: image.width, height: image.height)
         let env = SUEnvironment(configDir: configDir, input: image, exif: exif)

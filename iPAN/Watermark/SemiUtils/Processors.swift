@@ -231,10 +231,10 @@ struct WatermarkFilter: SUProcessor {
             leftLogoWidth = size
         }
 
-        if let logo = centerLogo {
+        if let original = centerLogo {
             let logoHeight = centerLogoHeight > 0 ? centerLogoHeight : canvasHeight - footerStartY
-            let w = Int(Double(logo.width) * Double(logoHeight) / Double(logo.height))
-            centerLogo = Raster.resize(logo, width: max(1, w), height: max(1, logoHeight))
+            let w = Int(Double(original.width) * Double(logoHeight) / Double(original.height))
+            centerLogo = Raster.resize(original, width: max(1, w), height: max(1, logoHeight))
             if let centerLogo {
                 let x = (canvasWidth - centerLogo.width) / 2
                 let y = footerStartY + ((canvasHeight - footerStartY) - centerLogo.height) / 2
@@ -325,7 +325,7 @@ struct ShadowFilter: SUProcessor {
         let shadowColor = ctx.color("shadow_color", RGBA(r: 0, g: 0, b: 0, a: 180))
         let radius = ctx.int("shadow_radius", 30)
         let falloff = 1.5
-        ctx.buffer = ctx.buffer.compactMap { img in
+        ctx.buffer = ctx.buffer.compactMap { img -> CGImage? in
             guard radius > 0 else { return img }
             let padding = radius * 2
             let fw = img.width + padding * 2, fh = img.height + padding * 2

@@ -48,7 +48,8 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/iPAN.app Payload/
-          zip -qry iPAN-unsigned.ipa Payload
+          # ditto 会写入 UTF-8 文件名标记，保证中文模板名在侧载安装后不乱码
+          ditto -c -k --norsrc --keepParent Payload iPAN-unsigned.ipa
           ls -lh iPAN-unsigned.ipa
 
       - name: Upload IPA
