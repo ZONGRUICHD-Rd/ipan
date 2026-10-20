@@ -48,7 +48,7 @@ jobs:
         run: |
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/iPAN.app Payload/
-          # ditto 会写入 UTF-8 文件名标记，保证中文模板名在侧载安装后不乱码
+          # 与 Xcode 导出 IPA 一样用 ditto 打包（文件名为 UTF-8 字节，中文模板名可正常安装）
           ditto -c -k --norsrc --keepParent Payload iPAN-unsigned.ipa
           ls -lh iPAN-unsigned.ipa
 
