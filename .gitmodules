@@ -1,0 +1,3 @@
+[submodule "Vendor/semi-utils"]
+	path = Vendor/semi-utils
+	url = https://github.com/ZONGRUICHD-Rd/semi-utils-ios-support

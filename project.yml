@@ -1,0 +1,50 @@
+name: iPAN
+options:
+  bundleIdPrefix: com.zongruichd
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Manual
+targets:
+  iPAN:
+    type: application
+    platform: iOS
+    sources:
+      - path: iPAN
+      # semi-utils 的模板 / logo / 字体，以 config 目录原样打包进 App
+      - path: Vendor/semi-utils/config
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zongruichd.ipan
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: iPAN/Info.plist
+        ENABLE_PREVIEWS: YES
+    info:
+      path: iPAN/Info.plist
+      properties:
+        CFBundleDisplayName: iPAN
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiresFullScreen: true
+        UIStatusBarHidden: true
+        UIViewControllerBasedStatusBarAppearance: false
+        UIUserInterfaceStyle: Dark
+        NSCameraUsageDescription: iPAN 需要使用相机拍摄 65:24 宽幅照片。
+        NSPhotoLibraryAddUsageDescription: iPAN 需要把拍摄的照片保存到你的相册。
+        NSPhotoLibraryUsageDescription: iPAN 需要读取刚拍摄的照片用于预览。
