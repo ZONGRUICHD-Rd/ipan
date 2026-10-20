@@ -119,6 +119,7 @@ private struct CameraScreenContent: View {
     @Environment(\.scenePhase) private var scenePhase
     @Namespace private var shotNamespace
     @State private var showPalette = false
+    @State private var showAperture = false
     @State private var showSettings = false
     @State private var showReview = false
 
@@ -145,6 +146,11 @@ private struct CameraScreenContent: View {
 
                 if showPalette {
                     paletteOverlay(layout)
+                        .transition(.move(edge: layout.isLandscape ? .trailing : .bottom).combined(with: .opacity))
+                }
+
+                if showAperture, let support = camera.apertureSupport {
+                    apertureOverlay(layout, support: support)
                         .transition(.move(edge: layout.isLandscape ? .trailing : .bottom).combined(with: .opacity))
                 }
 
@@ -190,7 +196,9 @@ private struct CameraScreenContent: View {
     private var caption: String {
         switch model.mode {
         case .ipan:
-            return "iPAN  \(model.plan.focal.millimeters)mm  65:24  \(settings.filmMode.caption)"
+            let aperture = camera.apertureSupport != nil && camera.liveAperture > 0
+                ? "  ƒ\(VariableAperture.label(camera.liveAperture))" : ""
+            return "iPAN  \(model.plan.focal.millimeters)mm  65:24  \(settings.filmMode.caption)\(aperture)"
         case .stitch:
             return "iPAN WIDE β  双摄拼接  65:24"
         }
@@ -354,10 +362,30 @@ private struct CameraScreenContent: View {
                         Image(systemName: settings.vignette ? "circle.dashed.inset.filled" : "circle.dashed")
                     }
                     Button {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { showPalette.toggle() }
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                            showPalette.toggle()
+                            if showPalette { showAperture = false }
+                        }
                     } label: {
                         Image(systemName: "paintpalette")
                             .foregroundStyle(settings.palette.isIdentity && !showPalette ? .white : OPPOStyle.accent)
+                    }
+                    // 可变光圈（iOS 27 + 支持的镜头才显示）
+                    if camera.apertureSupport != nil {
+                        Button {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                                showAperture.toggle()
+                                if showAperture { showPalette = false }
+                            }
+                        } label: {
+                            Text(camera.lockedAperture.map { "ƒ" + VariableAperture.label($0) } ?? "ƒA")
+                                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                                .monospacedDigit()
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                                .frame(width: 32)
+                                .foregroundStyle(camera.lockedAperture != nil || showAperture ? OPPOStyle.accent : .white)
+                        }
                     }
                 }
                 .font(.system(size: 17, weight: .medium))
@@ -416,6 +444,18 @@ private struct CameraScreenContent: View {
             .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1.5))
         }
         .buttonStyle(.plain)
+    }
+
+    private func apertureOverlay(_ layout: CameraLayout, support: VariableAperture.Support) -> some View {
+        let region = layout.bandRegion
+        let width = layout.isLandscape ? min(440, region.width) : layout.size.width - 24
+        return AperturePanel(support: support, locked: camera.lockedAperture, live: camera.liveAperture,
+                             onSelect: { model.setAperture($0) }) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { showAperture = false }
+        }
+        .frame(width: max(280, width))
+        .position(x: layout.isLandscape ? region.midX : layout.size.width / 2,
+                  y: layout.isLandscape ? layout.size.height / 2 : layout.size.height - layout.bottom - CameraLayout.bottomControls - 90)
     }
 
     private func paletteOverlay(_ layout: CameraLayout) -> some View {

@@ -24,7 +24,8 @@ OPPO / 一加的 XPan 模式并不拼接画面，而是**从单颗镜头的全�
 
 - **负片显影动效**（仿 OPPO XPAN）：按下快门 → 取景窗口快门帘黑屏 → 画面以 C-41 彩色负片（反相 + 橙色片基 + 颗粒）出现 → 由中心向外显影成正片 → 飞入左下角缩略图。着色器见 `iPAN/UI/Shaders/FilmDevelop.metal`。
 - **色彩**：HNCS（默认，仿哈苏自然色彩，见下文）/ XPan 胶片 / 原色 / 黑白，以及可选的广角边缘失光（暗角）。预览用 Core Image + Metal 实时渲染，所见即所得。
-- **Camera Control 按键**（iPhone 16 及以后）：完全按下拍照（音量键同样可以）；轻按弹出控件，轻点两下切换：焦段（24–200mm）、曝光补偿（系统滑块）、色彩。控件全屏展开时界面会自动收起。
+- **可变光圈**（iPhone 18 Pro 主摄 f/1.48–f/4.0，需要 iOS 27）：左侧工具栏的 ƒ 按钮打开光圈面板，可选自动或系统推荐的档位；采用光圈优先，快门与 ISO 仍自动调整。Camera Control 里也有「光圈」选择器。切到长焦或双摄拼接时隐藏（这些镜头是固定光圈）。iOS 27 才有光圈 API，而工程按要求用 Xcode 26（iOS 26 SDK）构建，所以通过 Objective-C 运行时调用（`iPAN/Camera/VariableAperture.swift`），在不支持的系统上自动隐藏。
+- **Camera Control 按键**（iPhone 16 及以后）：完全按下拍照（音量键同样可以）；轻按弹出控件，轻点两下切换：焦段（24–200mm）、曝光补偿（系统滑块）、色彩、光圈（支持的机型）。控件全屏展开时界面会自动收起。
 - **调色盘**：底色风格 + 色调/色彩二维盘 + 调色板强度，交互仿 iOS「摄影风格」（原因见下文）。
 - **水印**：使用 [semi-utils-ios-support](https://github.com/ZONGRUICHD-Rd/semi-utils-ios-support)（以 git submodule 放在 `Vendor/semi-utils`）。它的模板、Logo、字体原样打包进 App，Python 处理管道（Jinja2 模板 + filters/generators/mergers）移植到了 Swift（`iPAN/Watermark/SemiUtils`）。全部 7 个模板的渲染结果已和真实 Jinja2 逐项比对一致。
 - **双摄拼接（测试）**：必须横持。用「双广角」虚拟设备让主摄和超广角同步曝光；超广角按焦距比放大作底，主摄经 Vision 单应性配准后贴在中间，羽化接缝 + 色彩匹配，输出约 13mm 视角的 65:24。配准失败时退回平移配准或居中对齐，成片预览里会显示用了哪种方式。

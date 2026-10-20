@@ -77,6 +77,8 @@ final class AppSettings: ObservableObject {
     /// 水印里的品牌 Logo（semi-utils 的 auto_logo，iPhone 上是苹果 Logo），默认不加
     @AppStorage("watermarkLogo") var watermarkLogo: Bool = false
     @AppStorage("saveOriginal") var saveOriginal: Bool = false
+    /// 锁定的光圈 f 值，0 表示自动
+    @AppStorage("aperture") var aperture: Double = 0
     @AppStorage("developAnimation") var developAnimation: Bool = true
 
     // 调色盘（仿 iOS 摄影风格的色调 / 色彩 / 调色板三参数 + 底色风格）

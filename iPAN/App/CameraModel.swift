@@ -113,6 +113,7 @@ final class CameraModel: ObservableObject {
     func start() {
         observeInterfaceOrientation()
         setupCameraControls()
+        camera.setAperture(settings.aperture > 0 ? Float(settings.aperture) : nil)
         camera.start(with: currentConfiguration)
         syncPreview()
     }
@@ -165,6 +166,15 @@ final class CameraModel: ObservableObject {
         syncCameraControls()
     }
 
+    // MARK: 可变光圈
+
+    /// nil = 自动。光圈优先：锁定光圈，快门与 ISO 自动。
+    func setAperture(_ value: Float?, fromControl: Bool = false) {
+        settings.aperture = Double(value ?? 0)
+        camera.setAperture(value)
+        if !fromControl { UISelectionFeedbackGenerator().selectionChanged() }
+    }
+
     // MARK: 相机控制（Camera Control 按键）
 
     /// 轻按 Camera Control 弹出的控件：焦段、曝光补偿（系统）、色彩。完全按下由界面的 onCameraCaptureEvent 触发快门。
@@ -183,6 +193,9 @@ final class CameraModel: ObservableObject {
             onLook: { [weak self] index in
                 guard let self, films.indices.contains(index) else { return }
                 self.setFilm(films[index])
+            },
+            onAperture: { [weak self] value in
+                self?.setAperture(value, fromControl: true)
             }
         )
     }
