@@ -36,6 +36,7 @@ struct SettingsSheet: View {
                         Picker("模板", selection: $settings.watermarkTemplate) {
                             ForEach(templates, id: \.self) { Text($0).tag($0) }
                         }
+                        Toggle("显示品牌 Logo", isOn: $settings.watermarkLogo)
                     }
                 } header: {
                     Text("水印（semi-utils）")

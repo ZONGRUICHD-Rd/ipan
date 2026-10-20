@@ -39,6 +39,8 @@ final class AppSettings: ObservableObject {
     @AppStorage("portraitOutput") var portraitOutput: PortraitOutput = .landscapeBand
     @AppStorage("watermarkEnabled") var watermarkEnabled: Bool = false
     @AppStorage("watermarkTemplate") var watermarkTemplate: String = "标准水印"
+    /// 水印里的品牌 Logo（semi-utils 的 auto_logo，iPhone 上是苹果 Logo），默认不加
+    @AppStorage("watermarkLogo") var watermarkLogo: Bool = false
     @AppStorage("saveOriginal") var saveOriginal: Bool = false
     @AppStorage("developAnimation") var developAnimation: Bool = true
 

@@ -204,6 +204,7 @@ final class CameraModel: ObservableObject {
             vignette: settings.vignette,
             portraitOutput: settings.portraitOutput,
             watermarkTemplate: settings.watermarkEnabled ? settings.watermarkTemplate : nil,
+            watermarkLogo: settings.watermarkLogo,
             saveOriginal: settings.saveOriginal
         )
         let captureMode = mode

@@ -86,7 +86,8 @@ enum WatermarkService {
             .sorted()
     }
 
-    static func apply(template: String, to image: CGImage, info: CaptureInfo) throws -> CGImage {
+    /// - Parameter showLogo: false 时模板里的 auto_logo() 返回空，不画品牌 Logo（连同旁边的分隔线）
+    static func apply(template: String, to image: CGImage, info: CaptureInfo, showLogo: Bool = false) throws -> CGImage {
         guard let configDir else { throw SUError("App 内缺少 semi-utils 的 config 资源") }
         var url = configDir.appendingPathComponent("templates").appendingPathComponent(template + ".json")
         if !FileManager.default.fileExists(atPath: url.path), let fallback = availableTemplates().first {
@@ -104,7 +105,7 @@ enum WatermarkService {
             "file_path": .string(SUEnvironment.inputPath),
             "file_dir": .string("/iPAN"),
         ]
-        let rendered = try TemplateEngine.render(source, variables: variables, functions: SUFunctions(env: env))
+        let rendered = try TemplateEngine.render(source, variables: variables, functions: SUFunctions(env: env, showLogo: showLogo))
         guard let data = rendered.data(using: .utf8),
               let nodes = try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         else { throw SUError("模板 \(template) 渲染后不是合法的 JSON 数组") }
@@ -119,6 +120,7 @@ enum WatermarkService {
 /// core/jinja2renders.py 中注册到模板的 vh / vw / auto_logo
 struct SUFunctions: TemplateFunctions {
     let env: SUEnvironment
+    var showLogo = true
 
     func call(_ name: String, _ args: [JValue], _ kwargs: [String: JValue]) throws -> JValue {
         switch name {
@@ -127,6 +129,7 @@ struct SUFunctions: TemplateFunctions {
             let base = Double(env.exif[name == "vw" ? "ImageWidth" : "ImageHeight"] ?? "0") ?? 0
             return .int(Int(base * percent / 100))
         case "auto_logo":
+            guard showLogo else { return .none }
             var brand = (args.first ?? kwargs["brand"])?.str ?? ""
             if brand.isEmpty || brand == "None" { brand = env.exif["Make"] ?? "default" }
             brand = brand.lowercased()

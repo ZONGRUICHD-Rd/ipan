@@ -13,6 +13,7 @@ struct ProcessingOptions {
     var vignette: Bool
     var portraitOutput: PortraitOutput
     var watermarkTemplate: String?
+    var watermarkLogo: Bool = false
     var saveOriginal: Bool
 }
 
@@ -93,7 +94,7 @@ enum PhotoProcessor {
         }
         if let template = options.watermarkTemplate {
             do {
-                cg = try WatermarkService.apply(template: template, to: cg, info: info)
+                cg = try WatermarkService.apply(template: template, to: cg, info: info, showLogo: options.watermarkLogo)
             } catch {
                 print("[iPAN] 水印失败: \(error)")
             }
