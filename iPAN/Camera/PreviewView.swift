@@ -39,6 +39,8 @@ struct CameraPreview: UIViewRepresentable {
         view.backgroundColor = .black
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         view.delegate = renderer
+        // 预览本身不接收触摸，点击对焦只在取景窗口的透明层上处理
+        view.isUserInteractionEnabled = false
         renderer.attach(frames: frames, state: state)
         return view
     }

@@ -21,6 +21,9 @@ struct CameraLayout {
     let size: CGSize
     let safe: EdgeInsets
     let orientation: UIInterfaceOrientation
+    /// 屏幕尺寸（随界面方向）。App 跑在 LiveContainer 等容器的小窗里时，窗口比屏幕小。
+    var screenSize: CGSize = .zero
+    var isPhone: Bool = true
 
     var isLandscape: Bool { size.width > size.height }
 
@@ -42,11 +45,30 @@ struct CameraLayout {
         }
     }
 
-    /// 灵动岛那一侧保留完整安全区（灵动岛横屏时伸进屏幕约 61pt，会挡住控件）；
-    /// 另一侧没有遮挡，只留一点边距，把空间让给取景窗口。方向未知时两侧都保留安全区。
-    var leading: CGFloat { islandOnLeading == false ? max(min(safe.leading, 14), 10) : max(safe.leading, 10) }
-    var trailing: CGFloat { islandOnLeading == true ? max(min(safe.trailing, 14), 8) : max(safe.trailing, 8) }
-    var top: CGFloat { max(safe.top, 10) }
+    /// 横屏时灵动岛伸进屏幕约 61pt。容器小窗里系统报告的安全区可能是 0，所以 iPhone 上自己保证这段距离。
+    static let islandClearance: CGFloat = 64
+    /// 容器小窗顶部的标题栏（App 名 + 最小化/关闭按钮）
+    static let windowChromeHeight: CGFloat = 52
+
+    /// 不是全屏，而是跑在别的 App 的小窗里
+    var isWindowed: Bool {
+        screenSize.width > 0 && (abs(size.width - screenSize.width) > 2 || abs(size.height - screenSize.height) > 2)
+    }
+
+    private var islandInset: CGFloat { isPhone ? Self.islandClearance : 0 }
+
+    /// 灵动岛那一侧保留足够距离；另一侧没有遮挡，只留一点边距，把空间让给取景窗口。方向未知时两侧都避开。
+    var leading: CGFloat {
+        islandOnLeading == false ? max(min(safe.leading, 14), 10) : max(safe.leading, islandInset, 10)
+    }
+    var trailing: CGFloat {
+        islandOnLeading == true ? max(min(safe.trailing, 14), 8) : max(safe.trailing, islandInset, 8)
+    }
+    var top: CGFloat {
+        if isWindowed { return max(safe.top, Self.windowChromeHeight) }
+        // 竖屏时灵动岛在顶部
+        return isLandscape ? max(safe.top, 10) : max(safe.top, isPhone ? 59 : 10)
+    }
     var bottom: CGFloat { max(safe.bottom, 10) }
 
     var rightRailsWidth: CGFloat { Self.focalRail + Self.modeRail + Self.controlRail }
@@ -83,6 +105,12 @@ struct CameraLayout {
 }
 
 private struct CameraScreenContent: View {
+    /// 当前屏幕尺寸（随界面方向），用来判断是否跑在容器小窗里
+    static var screenSize: CGSize {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        return scene?.screen.bounds.size ?? .zero
+    }
+
     @ObservedObject var model: CameraModel
     @ObservedObject var camera: CameraController
     @ObservedObject var settings: AppSettings
@@ -95,7 +123,8 @@ private struct CameraScreenContent: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let layout = CameraLayout(size: proxy.size, safe: proxy.safeAreaInsets, orientation: camera.interfaceOrientation)
+            let layout = CameraLayout(size: proxy.size, safe: proxy.safeAreaInsets, orientation: camera.interfaceOrientation,
+                                      screenSize: Self.screenSize, isPhone: UIDevice.current.userInterfaceIdiom == .phone)
             let band = layout.band(ratio: model.bandRatio(isLandscapeUI: layout.isLandscape))
             ZStack(alignment: .topLeading) {
                 Color.black
@@ -162,16 +191,26 @@ private struct CameraScreenContent: View {
             CameraPreview(frames: camera.frames, state: model.previewState, renderer: model.renderer)
                 .blur(radius: camera.isSwitching ? 22 : 0)
                 .animation(.easeInOut(duration: 0.22), value: camera.isSwitching)
-                .contentShape(Rectangle())
-                .onTapGesture { location in
-                    model.focus(at: CGPoint(x: location.x / max(1, screen.width), y: location.y / max(1, screen.height)), screen: screen)
-                }
+                .allowsHitTesting(false)
 
             PanoramaMask(band: model.band, caption: caption,
                          mainCoverage: model.mode == .stitch ? model.mainCoverage : nil)
 
             DevelopOverlay(phase: model.developPhase, image: model.developImage, progress: model.developProgress,
                            band: model.band, namespace: shotNamespace)
+
+            // 只在 65:24 窗口内点击对焦：按钮都在窗口外，不会再和对焦冲突
+            let bandFrame = CGRect(x: model.band.minX * screen.width, y: model.band.minY * screen.height,
+                                   width: model.band.width * screen.width, height: model.band.height * screen.height)
+            Color.clear
+                .contentShape(Rectangle())
+                .frame(width: bandFrame.width, height: bandFrame.height)
+                .onTapGesture { location in
+                    let x = (bandFrame.minX + location.x) / max(1, screen.width)
+                    let y = (bandFrame.minY + location.y) / max(1, screen.height)
+                    model.focus(at: CGPoint(x: x, y: y), screen: screen)
+                }
+                .offset(x: bandFrame.minX, y: bandFrame.minY)
 
             if let point = model.focusPoint {
                 OPPOFocusIndicator()
