@@ -188,9 +188,10 @@ private struct NamePlate: View {
             .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).stroke(Color.white.opacity(0.07), lineWidth: 0.6).padding(-1))
             .overlay(
                 Text("HASSELBLAD")
-                    // 斜体要放在 Font 上：宽体 + 斜体 + 粗
-                    .font(.system(size: 14, weight: .bold).width(.expanded).italic())
+                    .font(.system(size: 14, weight: .bold).width(.expanded))
                     .kerning(2.8)
+                    // 系统宽体没有斜体字形，用错切变换做出斜体
+                    .transformEffect(CGAffineTransform(a: 1, b: 0, c: -0.24, d: 1, tx: 3, ty: 0))
                     .foregroundStyle(LinearGradient(colors: [Color(white: 0.78), Color(white: 0.58)], startPoint: .top, endPoint: .bottom))
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
