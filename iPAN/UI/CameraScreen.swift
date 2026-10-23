@@ -335,7 +335,7 @@ private struct CameraScreenContent: View {
                 .position(chrome.settingsCenter)
 
             // 左下：工具（调色盘 / 光圈 / 水印 / 暗角），向右展开
-            BodyRoundButton(systemName: "camera.filters", diameter: d,
+            BodyRoundButton(systemName: "camera", diameter: d,
                             active: showTools || !settings.palette.isIdentity || camera.lockedAperture != nil) {
                 withAnimation(spring) {
                     showTools.toggle()

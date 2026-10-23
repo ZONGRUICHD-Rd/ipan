@@ -148,12 +148,7 @@ struct TonePad: View {
                 onChange()
             }
         }
-        .overlay(alignment: .top) {
-            Text("色调").font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).offset(y: -14)
-        }
-        .overlay(alignment: .trailing) {
-            Text("色彩").font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary).offset(x: 24)
-        }
+
     }
 
     private func clamp(_ v: Double) -> Double { min(1, max(-1, v)) }

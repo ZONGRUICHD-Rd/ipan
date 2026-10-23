@@ -16,15 +16,15 @@ struct XPanBodyLayout {
 
     /// 上下接缝线的高度
     var topSeamY: CGFloat { 33 * sy }
-    var bottomSeamY: CGFloat { 368 * sy }
-    /// 中间梯形缺口：顶边宽度、底边宽度、深度
-    var notchCenterX: CGFloat { windowRegion.midX }
-    var notchOuterWidth: CGFloat { 250 * sx }
-    var notchInnerWidth: CGFloat { 190 * sx }
-    var notchDepth: CGFloat { 22 * sy }
+    var bottomSeamY: CGFloat { 363 * sy }
+    /// 中间梯形缺口：中心、外沿宽度、内沿宽度、深度（量自截图）
+    var notchCenterX: CGFloat { 335 * sx }
+    var notchOuterWidth: CGFloat { 236 * sx }
+    var notchInnerWidth: CGFloat { 156 * sx }
+    var notchDepth: CGFloat { 23 * sy }
 
     var plate: CGRect {
-        CGRect(x: notchCenterX - 87 * sx, y: 23 * sy, width: 174 * sx, height: 22 * sy)
+        CGRect(x: notchCenterX - 86 * sx, y: 23 * sy, width: 173 * sx, height: 21 * sy)
     }
 
     var leftColumnX: CGFloat { 69 * sx }
@@ -44,16 +44,23 @@ struct XPanBodyLayout {
 
 // MARK: - 机身
 
+/// 颜色取自参考截图的像素
 private enum BodyPalette {
-    static let fill = Color(red: 0.106, green: 0.110, blue: 0.122)
-    static let fillLight = Color(red: 0.135, green: 0.139, blue: 0.152)
-    static let seamDark = Color.black.opacity(0.55)
-    static let seamLight = Color.white.opacity(0.07)
-    static let bezel = Color(red: 0.07, green: 0.072, blue: 0.08)
-    static let orange = Color(red: 0.93, green: 0.52, blue: 0.20)
+    /// 机身上半部 #222126 → 下半部 #18171B
+    static let top = Color(red: 0.133, green: 0.129, blue: 0.149)
+    static let bottom = Color(red: 0.094, green: 0.090, blue: 0.106)
+    /// 两侧握把区域
+    static let grip = Color(red: 0.118, green: 0.114, blue: 0.133)
+    static let seamDark = Color(red: 0.07, green: 0.067, blue: 0.086)
+    static let seamLight = Color(red: 0.216, green: 0.212, blue: 0.231)
+    /// 取景窗边框环 #1F1E23
+    static let ring = Color(red: 0.122, green: 0.118, blue: 0.137)
+    static let orange = Color(red: 0.863, green: 0.604, blue: 0.365)
+    static let buttonFill = Color(red: 0.145, green: 0.141, blue: 0.161)
+    static let buttonRim = Color(red: 0.075, green: 0.071, blue: 0.090)
 }
 
-/// 机身背景：整块深灰（取景窗处挖空露出预览）+ 接缝 + 铭牌 + 取景窗边框
+/// 机身背景：整块深灰（取景窗处挖空露出预览）+ 两侧握把 + 接缝 + 铭牌 + 取景窗边框
 struct XPanBodyBackground: View {
     let layout: XPanBodyLayout
     /// 取景窗（= 65:24 画幅）在全屏中的位置
@@ -62,40 +69,71 @@ struct XPanBodyBackground: View {
     var body: some View {
         let size = layout.size
         let hole = window
-        let bezel = hole.insetBy(dx: -9, dy: -9)
+        let ring: CGFloat = 5.5
+        let bezel = hole.insetBy(dx: -ring, dy: -ring)
+        let holeRadius: CGFloat = 11
+        let bezelRadius = holeRadius + ring
         ZStack(alignment: .topLeading) {
-            // 机身（挖空取景窗）
+            // 机身（挖空取景窗）：上亮下暗
             Path { p in
                 p.addRect(CGRect(origin: .zero, size: size))
-                p.addRoundedRect(in: hole, cornerSize: CGSize(width: 12, height: 12), style: .continuous)
+                p.addRoundedRect(in: hole, cornerSize: CGSize(width: holeRadius, height: holeRadius), style: .continuous)
             }
-            .fill(LinearGradient(colors: [BodyPalette.fillLight, BodyPalette.fill, BodyPalette.fillLight.opacity(0.9)],
+            .fill(LinearGradient(colors: [BodyPalette.top, BodyPalette.top, BodyPalette.bottom],
                                  startPoint: .top, endPoint: .bottom),
                   style: FillStyle(eoFill: true))
 
-            // 上下接缝（暗线 + 下方一条高光，做出压纹的感觉）
-            Seam(layout: layout, y: layout.topSeamY, notchDown: true)
-                .stroke(BodyPalette.seamDark, lineWidth: 1.5)
-            Seam(layout: layout, y: layout.topSeamY + 1.5, notchDown: true)
-                .stroke(BodyPalette.seamLight, lineWidth: 1)
-            Seam(layout: layout, y: layout.bottomSeamY, notchDown: false)
-                .stroke(BodyPalette.seamDark, lineWidth: 1.5)
-            Seam(layout: layout, y: layout.bottomSeamY + 1.5, notchDown: false)
-                .stroke(BodyPalette.seamLight, lineWidth: 1)
-
-            // 取景窗边框
-            Path { p in
-                p.addRoundedRect(in: bezel, cornerSize: CGSize(width: 20, height: 20), style: .continuous)
-                p.addRoundedRect(in: hole, cornerSize: CGSize(width: 12, height: 12), style: .continuous)
+            // 两侧握把：略亮的竖条，内侧边缘柔和过渡
+            HStack(spacing: 0) {
+                LinearGradient(colors: [BodyPalette.grip.opacity(0.9), BodyPalette.top.opacity(0.95), BodyPalette.top.opacity(0)],
+                               startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 46)
+                Spacer(minLength: 0)
+                LinearGradient(colors: [BodyPalette.top.opacity(0), BodyPalette.top.opacity(0.95), BodyPalette.grip.opacity(0.9)],
+                               startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 46)
             }
-            .fill(BodyPalette.bezel, style: FillStyle(eoFill: true))
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            .frame(width: size.width, height: size.height)
+            .mask(
+                Path { p in
+                    p.addRect(CGRect(origin: .zero, size: size))
+                    p.addRoundedRect(in: bezel, cornerSize: CGSize(width: bezelRadius, height: bezelRadius), style: .continuous)
+                }
+                .fill(style: FillStyle(eoFill: true))
+            )
+
+            // 上下接缝：一条暗线 + 紧贴下方的一条亮线，梯形转角是圆滑的
+            ForEach([(layout.topSeamY, true), (layout.bottomSeamY, false)], id: \.0) { seam in
+                Seam(layout: layout, y: seam.0, notchDown: seam.1)
+                    .stroke(BodyPalette.seamDark, style: StrokeStyle(lineWidth: 1.4, lineJoin: .round))
+                Seam(layout: layout, y: seam.0 + 1.3, notchDown: seam.1)
+                    .stroke(BodyPalette.seamLight, style: StrokeStyle(lineWidth: 0.9, lineJoin: .round))
+            }
+
+            // 取景窗边框：外沿一圈细高光 + 暗线，中间与机身同色的环，内沿黑边
+            Path { p in
+                p.addRoundedRect(in: bezel, cornerSize: CGSize(width: bezelRadius, height: bezelRadius), style: .continuous)
+                p.addRoundedRect(in: hole, cornerSize: CGSize(width: holeRadius, height: holeRadius), style: .continuous)
+            }
+            .fill(BodyPalette.ring, style: FillStyle(eoFill: true))
+            RoundedRectangle(cornerRadius: bezelRadius + 1, style: .continuous)
+                .stroke(Color.white.opacity(0.16), lineWidth: 0.8)
+                .frame(width: bezel.width + 2, height: bezel.height + 2)
+                .offset(x: bezel.minX - 1, y: bezel.minY - 1)
+            RoundedRectangle(cornerRadius: bezelRadius, style: .continuous)
+                .stroke(Color.black.opacity(0.7), lineWidth: 1)
                 .frame(width: bezel.width, height: bezel.height)
                 .offset(x: bezel.minX, y: bezel.minY)
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.black.opacity(0.8), lineWidth: 1.5)
+            // 内沿黑边 + 向画面里渐隐的内阴影
+            RoundedRectangle(cornerRadius: holeRadius, style: .continuous)
+                .stroke(Color.black, lineWidth: 2.5)
                 .frame(width: hole.width, height: hole.height)
+                .offset(x: hole.minX, y: hole.minY)
+            RoundedRectangle(cornerRadius: holeRadius, style: .continuous)
+                .stroke(Color.black.opacity(0.75), lineWidth: 10)
+                .blur(radius: 6)
+                .frame(width: hole.width, height: hole.height)
+                .clipShape(RoundedRectangle(cornerRadius: holeRadius, style: .continuous))
                 .offset(x: hole.minX, y: hole.minY)
 
             // 铭牌
@@ -108,7 +146,7 @@ struct XPanBodyBackground: View {
     }
 }
 
-/// 一道横贯机身的接缝，中间有梯形缺口（顶部向下凹，底部向上凸）
+/// 一道横贯机身的接缝，中间有梯形缺口（顶部向下凹，底部向上凸），转角用二次曲线做圆滑
 private struct Seam: Shape {
     let layout: XPanBodyLayout
     let y: CGFloat
@@ -118,77 +156,95 @@ private struct Seam: Shape {
         let cx = layout.notchCenterX
         let outer = layout.notchOuterWidth / 2, inner = layout.notchInnerWidth / 2
         let depth = notchDown ? layout.notchDepth : -layout.notchDepth
+        let r: CGFloat = 9
+        // 斜边方向
+        let dx = outer - inner, len = (dx * dx + depth * depth).squareRoot()
+        let ux = dx / len, uy = depth / len
         var p = Path()
         p.move(to: CGPoint(x: 0, y: y))
-        p.addLine(to: CGPoint(x: cx - outer, y: y))
-        p.addLine(to: CGPoint(x: cx - inner, y: y + depth))
-        p.addLine(to: CGPoint(x: cx + inner, y: y + depth))
-        p.addLine(to: CGPoint(x: cx + outer, y: y))
+        // 左上转角
+        p.addLine(to: CGPoint(x: cx - outer - r, y: y))
+        p.addQuadCurve(to: CGPoint(x: cx - outer + ux * r, y: y + uy * r), control: CGPoint(x: cx - outer, y: y))
+        // 左下转角
+        p.addLine(to: CGPoint(x: cx - inner - ux * r, y: y + depth - uy * r))
+        p.addQuadCurve(to: CGPoint(x: cx - inner + r, y: y + depth), control: CGPoint(x: cx - inner, y: y + depth))
+        // 右下转角
+        p.addLine(to: CGPoint(x: cx + inner - r, y: y + depth))
+        p.addQuadCurve(to: CGPoint(x: cx + inner + ux * r, y: y + depth - uy * r), control: CGPoint(x: cx + inner, y: y + depth))
+        // 右上转角
+        p.addLine(to: CGPoint(x: cx + outer - ux * r, y: y + uy * r))
+        p.addQuadCurve(to: CGPoint(x: cx + outer + r, y: y), control: CGPoint(x: cx + outer, y: y))
         p.addLine(to: CGPoint(x: layout.size.width, y: y))
         return p
     }
 }
 
+/// 铭牌：比机身略深的凹槽，宽体斜体字标
 private struct NamePlate: View {
     var body: some View {
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(LinearGradient(colors: [Color.black.opacity(0.85), Color(white: 0.09)], startPoint: .top, endPoint: .bottom))
-            .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 0.8))
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+            .fill(LinearGradient(colors: [Color(white: 0.055), Color(white: 0.085)], startPoint: .top, endPoint: .bottom))
+            .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).stroke(Color.black.opacity(0.8), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).stroke(Color.white.opacity(0.07), lineWidth: 0.6).padding(-1))
             .overlay(
                 Text("HASSELBLAD")
-                    .font(.system(size: 15, weight: .heavy, design: .serif))
+                    .font(.system(size: 14, weight: .semibold))
+                    .fontWidth(.expanded)
                     .italic()
-                    .kerning(4.5)
-                    .foregroundStyle(LinearGradient(colors: [Color(white: 0.86), Color(white: 0.62)], startPoint: .top, endPoint: .bottom))
+                    .kerning(3.2)
+                    .foregroundStyle(LinearGradient(colors: [Color(white: 0.78), Color(white: 0.58)], startPoint: .top, endPoint: .bottom))
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 6)
             )
     }
 }
 
 // MARK: - 取景窗内
 
-/// 旁轴取景器式的亮框线：四角折角 + 上下左右的短亮线
+/// 旁轴取景器式的亮框线（位置量自截图）：左边只有竖线段，右边上下是折角、中间一段竖线，上下边是长短不一的横线段
 struct RangefinderFrameLines: View {
     let window: CGRect
 
     var body: some View {
         let w = window.width, h = window.height
-        let inset: CGFloat = 10
+        let ix: CGFloat = 7.5, iy: CGFloat = 6.5
+        let left = window.minX + ix, right = window.maxX - ix
+        let top = window.minY + iy, bottom = window.maxY - iy
         Path { p in
-            let r = window.insetBy(dx: inset, dy: inset)
-            let l = min(22, r.height / 6)
-            // 四角
-            for (c, dx, dy) in [(CGPoint(x: r.minX, y: r.minY), 1.0, 1.0), (CGPoint(x: r.maxX, y: r.minY), -1.0, 1.0),
-                                (CGPoint(x: r.minX, y: r.maxY), 1.0, -1.0), (CGPoint(x: r.maxX, y: r.maxY), -1.0, -1.0)] {
-                p.move(to: CGPoint(x: c.x + dx * l, y: c.y))
-                p.addLine(to: c)
-                p.addLine(to: CGPoint(x: c.x, y: c.y + dy * l))
+            func hLine(_ a: CGFloat, _ b: CGFloat, _ y: CGFloat) {
+                p.move(to: CGPoint(x: window.minX + w * a, y: y))
+                p.addLine(to: CGPoint(x: window.minX + w * b, y: y))
             }
-            // 上边 / 下边的亮线段
-            for (a, b) in [(0.17, 0.27), (0.44, 0.64)] {
-                p.move(to: CGPoint(x: window.minX + w * a, y: r.minY))
-                p.addLine(to: CGPoint(x: window.minX + w * b, y: r.minY))
+            func vLine(_ x: CGFloat, _ a: CGFloat, _ b: CGFloat) {
+                p.move(to: CGPoint(x: x, y: window.minY + h * a))
+                p.addLine(to: CGPoint(x: x, y: window.minY + h * b))
             }
-            for (a, b) in [(0.07, 0.11), (0.28, 0.39), (0.69, 0.77)] {
-                p.move(to: CGPoint(x: window.minX + w * a, y: r.maxY))
-                p.addLine(to: CGPoint(x: window.minX + w * b, y: r.maxY))
-            }
-            // 左右两侧的竖线段
-            for x in [r.minX, r.maxX] {
-                for (a, b) in [(0.10, 0.20), (0.40, 0.62), (0.80, 0.90)] {
-                    p.move(to: CGPoint(x: x, y: window.minY + h * a))
-                    p.addLine(to: CGPoint(x: x, y: window.minY + h * b))
-                }
-            }
+            hLine(0.162, 0.267, top)
+            hLine(0.431, 0.632, top)
+            hLine(0.073, 0.114, bottom)
+            hLine(0.280, 0.388, bottom)
+            hLine(0.679, 0.756, bottom)
+            vLine(left, 0.067, 0.173)
+            vLine(left, 0.381, 0.639)
+            vLine(left, 0.798, 0.946)
+            vLine(right, 0.375, 0.630)
+            // 右上 / 右下折角
+            p.move(to: CGPoint(x: window.minX + w * 0.957, y: top))
+            p.addLine(to: CGPoint(x: right, y: top))
+            p.addLine(to: CGPoint(x: right, y: window.minY + h * 0.24))
+            p.move(to: CGPoint(x: right, y: window.minY + h * 0.75))
+            p.addLine(to: CGPoint(x: right, y: bottom))
+            p.addLine(to: CGPoint(x: window.minX + w * 0.948, y: bottom))
         }
-        .stroke(Color.white.opacity(0.82), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        .stroke(Color(white: 0.84), style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+        .shadow(color: .black.opacity(0.35), radius: 1)
         .allowsHitTesting(false)
     }
 }
 
-/// 取景窗左侧的曝光补偿刻度尺：上下拖动调节，双击归零
+/// 取景窗左侧的曝光补偿刻度尺：指示器固定在中间，刻度随数值上下移动；
+/// 长刻度为整档，中间两个小点为 1/3 档。上下拖动调节，双击归零。
 struct EVRuler: View {
     let value: Float
     let range: ClosedRange<Float>
@@ -198,39 +254,48 @@ struct EVRuler: View {
     @State private var lastTick: Int = 0
 
     private let step: Float = 0.1
+    /// 每 1EV 的间距（pt）
+    private let spacing: CGFloat = 26
 
     var body: some View {
         GeometryReader { proxy in
             let h = proxy.size.height
-            let span = range.upperBound - range.lowerBound
-            // 正值在上
-            let y = CGFloat((range.upperBound - value) / max(0.01, span)) * h
+            let tickX: CGFloat = 28
             ZStack(alignment: .topLeading) {
                 Canvas { ctx, size in
-                    let count = Int((span / 0.2).rounded())
-                    for i in 0...count {
-                        let ev = range.upperBound - Float(i) * 0.2
-                        let ty = CGFloat(i) / CGFloat(max(1, count)) * size.height
-                        let major = abs(ev.rounded() - ev) < 0.01
-                        let len: CGFloat = major ? 16 : 8
-                        let rect = CGRect(x: size.width - len - 2, y: ty - 0.75, width: len, height: 1.5)
-                        ctx.fill(Path(rect), with: .color(.white.opacity(major ? 0.85 : 0.5)))
+                    let mid = size.height / 2
+                    // 正值在上：数值为 v 时，刻度 e 位于 mid - (e - v) * spacing
+                    var e = (range.lowerBound * 3).rounded(.down) / 3
+                    while e <= range.upperBound + 0.001 {
+                        let y = mid - CGFloat(e - value) * spacing
+                        if y > -2 && y < size.height + 2 {
+                            let major = abs(e - e.rounded()) < 0.01
+                            // 越靠近边缘越淡
+                            let fade = max(0, 1 - abs(y - mid) / (size.height / 2)) * 0.6 + 0.4
+                            let rect = major
+                                ? CGRect(x: tickX - 4, y: y - 0.85, width: 8, height: 1.7)
+                                : CGRect(x: tickX - 1, y: y - 1, width: 2, height: 2)
+                            ctx.fill(Path(rect), with: .color(.white.opacity(0.85 * fade)))
+                        }
+                        e += 1.0 / 3
                     }
                 }
-                .frame(width: 26)
+                .frame(width: proxy.size.width, height: h)
 
-                HStack(spacing: 4) {
-                    Rectangle().fill(Color.white).frame(width: 14, height: 2)
+                HStack(spacing: 0) {
+                    Rectangle().fill(Color.white).frame(width: 14, height: 1.8)
                     Image(systemName: "arrowtriangle.left.fill")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
+                        .padding(.leading, 9)
                     Text(abs(value) < 0.05 ? "0.0" : String(format: "%+.1f", value))
-                        .font(.system(size: 15, weight: .regular, design: .rounded))
+                        .font(.system(size: 15, weight: .light))
                         .monospacedDigit()
+                        .padding(.leading, 9)
                 }
                 .foregroundStyle(.white)
                 .shadow(color: .black.opacity(0.5), radius: 3)
                 .fixedSize()
-                .offset(x: 14, y: y - 10)
+                .offset(x: tickX - 10, y: h / 2 - 10)
             }
             .frame(width: proxy.size.width, height: h, alignment: .topLeading)
             .contentShape(Rectangle())
@@ -239,8 +304,8 @@ struct EVRuler: View {
                     .onChanged { g in
                         let start = dragStart ?? value
                         if dragStart == nil { dragStart = start }
-                        let delta = Float(-g.translation.height / h) * span
-                        var v = start + delta
+                        // 向上拖 = 增加曝光
+                        var v = start + Float(-g.translation.height / spacing)
                         v = (v / step).rounded() * step
                         v = min(range.upperBound, max(range.lowerBound, v))
                         let tick = Int((v / step).rounded())
@@ -262,7 +327,7 @@ struct EVRuler: View {
     }
 }
 
-/// 取景窗右侧的变焦圆钮（OPPO 显示倍率：1× = 24mm）
+/// 取景窗右侧的变焦圆钮（OPPO 显示倍率：1× = 24mm）。选中项深色底 + 橙色字
 struct XPanZoomChips: View {
     let focals: [FocalLength]
     let selected: FocalLength
@@ -270,12 +335,13 @@ struct XPanZoomChips: View {
 
     static func label(_ focal: FocalLength) -> String {
         let x = Double(focal.millimeters) / 24
-        let text = x == x.rounded() ? String(Int(x)) : String(format: "%.1f", x)
-        return text
+        if x >= 3 { return String(Int(x.rounded(.down))) }   // 100mm = 4×、200mm = 8×
+        let rounded = (x * 10).rounded() / 10
+        return rounded == rounded.rounded() ? String(Int(rounded)) : String(format: "%.1f", rounded)
     }
 
     var body: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 3) {
             // 长焦在上，和 OPPO 一致
             ForEach(Array(focals.reversed())) { focal in
                 let isSelected = focal == selected
@@ -283,12 +349,11 @@ struct XPanZoomChips: View {
                     onSelect(focal)
                 } label: {
                     Text(isSelected ? Self.label(focal) + "×" : Self.label(focal))
-                        .font(.system(size: isSelected ? 13 : 12, weight: .semibold, design: .rounded))
+                        .font(.system(size: 12.5, weight: .semibold))
                         .monospacedDigit()
-                        .foregroundStyle(.white)
-                        .frame(width: 31, height: 31)
-                        .background(Circle().fill(Color.black.opacity(isSelected ? 0.6 : 0.16)))
-                        .shadow(color: .black.opacity(isSelected ? 0 : 0.6), radius: 2)
+                        .foregroundStyle(isSelected ? BodyPalette.orange : .white)
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(Color.black.opacity(isSelected ? 0.85 : 0.42)))
                 }
                 .buttonStyle(.plain)
             }
@@ -299,7 +364,7 @@ struct XPanZoomChips: View {
 
 // MARK: - 机身按键
 
-/// 机身上的圆形按键（设置、工具）
+/// 机身上的圆形按键（设置、工具）：深色圆盘 + 暗色外圈
 struct BodyRoundButton: View {
     let systemName: String
     let diameter: CGFloat
@@ -309,53 +374,65 @@ struct BodyRoundButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: diameter * 0.42, weight: .regular))
+                .font(.system(size: diameter * 0.45, weight: .light))
                 .foregroundStyle(active ? BodyPalette.orange : .white)
                 .frame(width: diameter, height: diameter)
                 .background(
                     Circle()
-                        .fill(LinearGradient(colors: [Color(white: 0.17), Color(white: 0.10)], startPoint: .top, endPoint: .bottom))
-                        .shadow(color: .black.opacity(0.6), radius: 3, y: 2)
+                        .fill(BodyPalette.buttonFill)
+                        .overlay(Circle().stroke(BodyPalette.buttonRim, lineWidth: 2))
+                        .overlay(Circle().stroke(Color.white.opacity(0.06), lineWidth: 0.8).padding(-1.5))
                 )
-                .overlay(Circle().stroke(Color.white.opacity(0.08), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
 }
 
-/// 竖排的 XPAN 标识面板。点按切换拍摄模式（iPAN ⇄ 双摄拼接）
+/// 竖排的标识面板（参考里是 XPAN 字标）。点按切换拍摄模式（iPAN ⇄ 双摄拼接）
 struct XPanBadge: View {
     let mode: CaptureMode
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 Image(systemName: "xmark")
                     .font(.system(size: 13, weight: .bold))
-                    .opacity(mode == .stitch ? 1 : 0.9)
-                Text(mode == .ipan ? "iPAN" : "WIDE")
-                    .font(.system(size: 21, weight: .light))
-                    .kerning(2)
+                    .padding(.top, 12)
+                logo
                     .fixedSize()
                     .rotationEffect(.degrees(-90))
                     .frame(maxHeight: .infinity)
             }
             .foregroundStyle(BodyPalette.orange)
-            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(LinearGradient(colors: [Color(white: 0.15), Color(white: 0.10)], startPoint: .leading, endPoint: .trailing))
-            )
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color(red: 0.075, green: 0.071, blue: 0.086)))
+            .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(mode == .ipan ? "iPAN 模式，点按切换到双摄拼接" : "双摄拼接模式，点按切换到 iPAN")
     }
+
+    /// 仿 XPAN 字标：细长字体，后几个字母下方带一道下划线
+    private var logo: some View {
+        let first = mode == .ipan ? "i" : "W"
+        let rest = mode == .ipan ? "PAN" : "IDE"
+        return HStack(alignment: .lastTextBaseline, spacing: 1) {
+            Text(first)
+                .font(.system(size: 22, weight: .ultraLight))
+                .fontWidth(.compressed)
+            VStack(spacing: 1.5) {
+                Text(rest)
+                    .font(.system(size: 22, weight: .ultraLight))
+                    .fontWidth(.compressed)
+                    .kerning(1.5)
+                Rectangle().frame(height: 1.2)
+            }
+        }
+    }
 }
 
-/// 金属质感的快门
+/// 金属快门：浅色金属外环 + 细暗缝 + 内凹的浅灰按钮（上暗下亮）
 struct MetalShutterButton: View {
     let diameter: CGFloat
     var isBusy: Bool
@@ -367,37 +444,35 @@ struct MetalShutterButton: View {
 
     var body: some View {
         ZStack {
-            // 外圈
+            // 外环
             Circle()
-                .fill(LinearGradient(colors: [Color(white: 0.55), Color(white: 0.22)], startPoint: .top, endPoint: .bottom))
-            Circle()
-                .fill(Color(white: 0.12))
-                .padding(diameter * 0.045)
-            // 金属按钮
-            Circle()
-                .fill(LinearGradient(colors: [Color(white: 0.98), Color(white: 0.80), Color(white: 0.70)],
+                .fill(LinearGradient(colors: [Color(white: 0.80), Color(white: 0.56), Color(white: 0.72)],
                                      startPoint: .top, endPoint: .bottom))
-                .overlay(
-                    Circle()
-                        .fill(RadialGradient(colors: [Color.white.opacity(0.7), .clear], center: .init(x: 0.4, y: 0.25),
-                                             startRadius: 0, endRadius: diameter * 0.35))
-                )
-                .overlay(Circle().stroke(Color.white.opacity(0.6), lineWidth: 0.8))
-                .padding(diameter * 0.11)
-                .scaleEffect(pressed ? 0.93 : 1)
+                .overlay(Circle().stroke(Color.black.opacity(0.6), lineWidth: 1))
+            // 暗缝
+            Circle()
+                .fill(Color(white: 0.30))
+                .padding(diameter * 0.075)
+            // 按钮（内凹：上暗下亮）
+            Circle()
+                .fill(LinearGradient(colors: [Color(white: 0.69), Color(white: 0.79), Color(white: 0.88)],
+                                     startPoint: .top, endPoint: .bottom))
+                .overlay(Circle().stroke(Color.white.opacity(0.75), lineWidth: 1).padding(0.5))
+                .padding(diameter * 0.09)
+                .scaleEffect(pressed ? 0.94 : 1)
                 .brightness(pressed ? -0.08 : 0)
             if isBusy {
                 Circle()
                     .trim(from: 0, to: 0.22)
                     .stroke(BodyPalette.orange, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                    .padding(diameter * 0.02)
+                    .padding(diameter * 0.035)
                     .rotationEffect(.degrees(spin ? 360 : 0))
                     .onAppear { withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { spin = true } }
                     .onDisappear { spin = false }
             }
         }
         .frame(width: diameter, height: diameter)
-        .shadow(color: .black.opacity(0.6), radius: 6, y: 3)
+        .shadow(color: .black.opacity(0.55), radius: 5, y: 2)
         .opacity(isEnabled ? 1 : 0.5)
         .contentShape(Circle())
         .gesture(
@@ -415,7 +490,7 @@ struct MetalShutterButton: View {
     }
 }
 
-/// 色彩风格卡片（对应 OPPO 的「Original」滤镜卡）
+/// 色彩风格卡片（参考里的「Original」卡）：黑底，上下两道彩色胶片条纹，中间是名称
 struct StyleTile: View {
     let film: FilmMode
     let size: CGFloat
@@ -430,34 +505,52 @@ struct StyleTile: View {
         }
     }
 
-    static func swatch(_ film: FilmMode) -> [Color] {
+    static func subtitle(_ film: FilmMode) -> String {
         switch film {
-        case .hncs: return [Color(red: 0.95, green: 0.62, blue: 0.30), Color(red: 0.55, green: 0.32, blue: 0.22), Color(red: 0.20, green: 0.33, blue: 0.48)]
-        case .color: return [Color(red: 0.98, green: 0.70, blue: 0.35), Color(red: 0.70, green: 0.35, blue: 0.20), Color(red: 0.25, green: 0.18, blue: 0.15)]
-        case .natural: return [Color(red: 0.95, green: 0.55, blue: 0.20), Color(red: 0.10, green: 0.10, blue: 0.12), Color(red: 0.15, green: 0.45, blue: 0.85)]
-        case .mono: return [Color(white: 0.92), Color(white: 0.35), Color(white: 0.08)]
+        case .hncs: return "Hasselblad Natural"
+        case .color: return "Film Curve"
+        case .natural: return "Natural tone"
+        case .mono: return "Black & White"
+        }
+    }
+
+    static func stripes(_ film: FilmMode) -> [Color] {
+        switch film {
+        case .hncs: return [Color(red: 0.95, green: 0.62, blue: 0.30), Color(red: 0.86, green: 0.78, blue: 0.62), Color(red: 0.36, green: 0.52, blue: 0.70)]
+        case .color: return [Color(red: 0.98, green: 0.66, blue: 0.30), Color(red: 0.86, green: 0.40, blue: 0.22), Color(red: 0.55, green: 0.30, blue: 0.20)]
+        case .natural: return [Color(red: 0.95, green: 0.55, blue: 0.20), Color(red: 0.90, green: 0.80, blue: 0.60), Color(red: 0.25, green: 0.50, blue: 0.85)]
+        case .mono: return [Color(white: 0.9), Color(white: 0.55), Color(white: 0.25)]
         }
     }
 
     var body: some View {
-        ZStack {
-            LinearGradient(colors: Self.swatch(film), startPoint: .top, endPoint: .bottom)
-            Text(Self.label(film))
-                .font(.system(size: size * 0.22, weight: .bold))
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.7), radius: 2)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .padding(.horizontal, 4)
+        let stripe = LinearGradient(colors: Self.stripes(film), startPoint: .leading, endPoint: .trailing)
+        VStack(spacing: 0) {
+            stripe.frame(height: 3).opacity(0.95)
+            Spacer(minLength: 0)
+            VStack(spacing: 0) {
+                Text(Self.label(film))
+                    .font(.system(size: size * 0.21, weight: .heavy))
+                    .foregroundStyle(.white)
+                Text(Self.subtitle(film))
+                    .font(.system(size: size * 0.07, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .padding(.horizontal, 3)
+            Spacer(minLength: 0)
+            stripe.frame(height: 3).opacity(0.95)
         }
-        // 和 OPPO 的滤镜卡一样是横向的小卡片
-        .frame(width: size - 8, height: size * 0.72 - 8)
+        .frame(width: size - 10, height: size * 0.72 - 10)
+        .background(
+            RadialGradient(colors: [Color(white: 0.16), Color.black], center: .center, startRadius: 0, endRadius: size * 0.4)
+        )
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .padding(4)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color(white: 0.06)))
-        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
-            .stroke(selected ? BodyPalette.orange : Color.white.opacity(0.15), lineWidth: selected ? 1.5 : 1))
-        .shadow(color: .black.opacity(0.5), radius: 3, y: 2)
+        .padding(5)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(white: 0.06)))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .stroke(selected ? BodyPalette.orange : Color(white: 0.22), lineWidth: selected ? 1.5 : 1))
     }
 }
 
@@ -481,14 +574,14 @@ struct StylePickerStrip: View {
     }
 }
 
-/// 缩略图卡片
+/// 缩略图卡片：厚的深色边框
 struct ThumbnailTile: View {
     let image: UIImage?
     let size: CGFloat
 
     var body: some View {
         ZStack {
-            Color(white: 0.12)
+            Color(white: 0.1)
             if let image {
                 Image(uiImage: image)
                     .resizable()
@@ -496,10 +589,9 @@ struct ThumbnailTile: View {
             }
         }
         .frame(width: size - 8, height: size - 8)
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .padding(4)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(white: 0.06)))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.white.opacity(0.15), lineWidth: 1))
-        .shadow(color: .black.opacity(0.5), radius: 3, y: 2)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(white: 0.09)))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color(white: 0.22), lineWidth: 1))
     }
 }

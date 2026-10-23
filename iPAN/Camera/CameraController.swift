@@ -50,8 +50,8 @@ final class CameraController: NSObject, ObservableObject {
     @Published private(set) var lockedAperture: Float?
     /// 曝光补偿（EV）。Camera Control 的系统曝光滑块改动时也会同步过来
     @Published private(set) var exposureBias: Float = 0
-    /// 曝光补偿范围（取当前镜头范围与 ±2EV 的交集）
-    @Published private(set) var exposureBiasRange: ClosedRange<Float> = -2...2
+    /// 曝光补偿范围（取当前镜头范围与 ±3EV 的交集，和 OPPO 的刻度尺一致）
+    @Published private(set) var exposureBiasRange: ClosedRange<Float> = -3...3
 
     let session = AVCaptureSession()
     let frames = FrameStore()
@@ -422,8 +422,8 @@ final class CameraController: NSObject, ObservableObject {
 
     /// sessionQueue 上调用
     private func applyExposureBias(to device: AVCaptureDevice) {
-        let lower = max(-2, device.minExposureTargetBias)
-        let upper = min(2, device.maxExposureTargetBias)
+        let lower = max(-3, device.minExposureTargetBias)
+        let upper = min(3, device.maxExposureTargetBias)
         guard lower < upper else { return }
         let value = min(upper, max(lower, requestedBias))
         if (try? device.lockForConfiguration()) != nil {
