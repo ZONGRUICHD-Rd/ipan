@@ -44,7 +44,7 @@ struct XPanBodyLayout {
 
 // MARK: - 机身
 
-private enum Body {
+private enum BodyPalette {
     static let fill = Color(red: 0.106, green: 0.110, blue: 0.122)
     static let fillLight = Color(red: 0.135, green: 0.139, blue: 0.152)
     static let seamDark = Color.black.opacity(0.55)
@@ -69,26 +69,26 @@ struct XPanBodyBackground: View {
                 p.addRect(CGRect(origin: .zero, size: size))
                 p.addRoundedRect(in: hole, cornerSize: CGSize(width: 12, height: 12), style: .continuous)
             }
-            .fill(LinearGradient(colors: [Body.fillLight, Body.fill, Body.fillLight.opacity(0.9)],
+            .fill(LinearGradient(colors: [BodyPalette.fillLight, BodyPalette.fill, BodyPalette.fillLight.opacity(0.9)],
                                  startPoint: .top, endPoint: .bottom),
                   style: FillStyle(eoFill: true))
 
             // 上下接缝（暗线 + 下方一条高光，做出压纹的感觉）
             Seam(layout: layout, y: layout.topSeamY, notchDown: true)
-                .stroke(Body.seamDark, lineWidth: 1.5)
+                .stroke(BodyPalette.seamDark, lineWidth: 1.5)
             Seam(layout: layout, y: layout.topSeamY + 1.5, notchDown: true)
-                .stroke(Body.seamLight, lineWidth: 1)
+                .stroke(BodyPalette.seamLight, lineWidth: 1)
             Seam(layout: layout, y: layout.bottomSeamY, notchDown: false)
-                .stroke(Body.seamDark, lineWidth: 1.5)
+                .stroke(BodyPalette.seamDark, lineWidth: 1.5)
             Seam(layout: layout, y: layout.bottomSeamY + 1.5, notchDown: false)
-                .stroke(Body.seamLight, lineWidth: 1)
+                .stroke(BodyPalette.seamLight, lineWidth: 1)
 
             // 取景窗边框
             Path { p in
                 p.addRoundedRect(in: bezel, cornerSize: CGSize(width: 20, height: 20), style: .continuous)
                 p.addRoundedRect(in: hole, cornerSize: CGSize(width: 12, height: 12), style: .continuous)
             }
-            .fill(Body.bezel, style: FillStyle(eoFill: true))
+            .fill(BodyPalette.bezel, style: FillStyle(eoFill: true))
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
                 .frame(width: bezel.width, height: bezel.height)
@@ -310,7 +310,7 @@ struct BodyRoundButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: diameter * 0.42, weight: .regular))
-                .foregroundStyle(active ? Body.orange : .white)
+                .foregroundStyle(active ? BodyPalette.orange : .white)
                 .frame(width: diameter, height: diameter)
                 .background(
                     Circle()
@@ -341,7 +341,7 @@ struct XPanBadge: View {
                     .rotationEffect(.degrees(-90))
                     .frame(maxHeight: .infinity)
             }
-            .foregroundStyle(Body.orange)
+            .foregroundStyle(BodyPalette.orange)
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
@@ -389,7 +389,7 @@ struct MetalShutterButton: View {
             if isBusy {
                 Circle()
                     .trim(from: 0, to: 0.22)
-                    .stroke(Body.orange, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .stroke(BodyPalette.orange, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                     .padding(diameter * 0.02)
                     .rotationEffect(.degrees(spin ? 360 : 0))
                     .onAppear { withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { spin = true } }
@@ -456,7 +456,7 @@ struct StyleTile: View {
         .padding(4)
         .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color(white: 0.06)))
         .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
-            .stroke(selected ? Body.orange : Color.white.opacity(0.15), lineWidth: selected ? 1.5 : 1))
+            .stroke(selected ? BodyPalette.orange : Color.white.opacity(0.15), lineWidth: selected ? 1.5 : 1))
         .shadow(color: .black.opacity(0.5), radius: 3, y: 2)
     }
 }
