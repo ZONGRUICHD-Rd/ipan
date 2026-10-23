@@ -188,10 +188,9 @@ private struct NamePlate: View {
             .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).stroke(Color.white.opacity(0.07), lineWidth: 0.6).padding(-1))
             .overlay(
                 Text("HASSELBLAD")
-                    .font(.system(size: 14, weight: .semibold))
-                    .fontWidth(.expanded)
-                    .italic()
-                    .kerning(3.2)
+                    // 斜体要放在 Font 上：宽体 + 斜体 + 粗
+                    .font(.system(size: 14, weight: .bold).width(.expanded).italic())
+                    .kerning(2.8)
                     .foregroundStyle(LinearGradient(colors: [Color(white: 0.78), Color(white: 0.58)], startPoint: .top, endPoint: .bottom))
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
@@ -283,12 +282,12 @@ struct EVRuler: View {
                 .frame(width: proxy.size.width, height: h)
 
                 HStack(spacing: 0) {
-                    Rectangle().fill(Color.white).frame(width: 14, height: 1.8)
+                    Rectangle().fill(Color.white).frame(width: 16, height: 2)
                     Image(systemName: "arrowtriangle.left.fill")
                         .font(.system(size: 12))
                         .padding(.leading, 9)
                     Text(abs(value) < 0.05 ? "0.0" : String(format: "%+.1f", value))
-                        .font(.system(size: 15, weight: .light))
+                        .font(.system(size: 17, weight: .light))
                         .monospacedDigit()
                         .padding(.leading, 9)
                 }
@@ -417,16 +416,14 @@ struct XPanBadge: View {
     private var logo: some View {
         let first = mode == .ipan ? "i" : "W"
         let rest = mode == .ipan ? "PAN" : "IDE"
+        let font = Font.system(size: 27, weight: .light).width(.condensed)
         return HStack(alignment: .lastTextBaseline, spacing: 1) {
-            Text(first)
-                .font(.system(size: 22, weight: .ultraLight))
-                .fontWidth(.compressed)
-            VStack(spacing: 1.5) {
+            Text(first).font(font)
+            VStack(spacing: 2) {
                 Text(rest)
-                    .font(.system(size: 22, weight: .ultraLight))
-                    .fontWidth(.compressed)
-                    .kerning(1.5)
-                Rectangle().frame(height: 1.2)
+                    .font(font)
+                    .kerning(1.2)
+                Rectangle().frame(height: 1.4)
             }
         }
     }
