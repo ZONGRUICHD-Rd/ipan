@@ -189,7 +189,16 @@ private struct CameraScreenContent: View {
             .onChange(of: proxy.size) { _, newSize in model.refreshInterfaceOrientation(fallbackSize: newSize) }
         }
         .ignoresSafeArea()
-        .onAppear { model.start() }
+        .onAppear {
+            model.start()
+            // 模拟器截图用：按启动参数展开对应面板
+            switch SimulatorDemo.uiState {
+            case "tools": showTools = true
+            case "styles": showStylePicker = true
+            case "palette": showPalette = true
+            default: break
+            }
+        }
         // Camera Control 完全按下（以及音量键）拍照
         .onCameraCaptureEvent(isEnabled: camera.authorization == .authorized) { event in
             if event.phase == .ended { model.shutter() }

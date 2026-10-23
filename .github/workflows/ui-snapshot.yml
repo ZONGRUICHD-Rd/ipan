@@ -1,0 +1,83 @@
+name: UI snapshot (simulator)
+
+# 在 iOS 模拟器里运行 iPAN 并截图，用来检查界面还原度（模拟器没有相机，取景窗显示内置的演示画面）
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Select Xcode 26
+        run: |
+          XCODE_APP=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -n 1)
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+
+      - name: Generate project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build for simulator
+        run: |
+          set -o pipefail
+          xcodebuild -project iPAN.xcodeproj -scheme iPAN -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO build 2>&1 | tee sim-build.log | { grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true; }
+          test -d build/Build/Products/Debug-iphonesimulator/iPAN.app
+
+      - name: Boot an iPhone Pro simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          best = None
+          for runtime, devices in data.items():
+              if "iOS" not in runtime:
+                  continue
+              for d in devices:
+                  name = d["name"]
+                  if "Pro" in name and "Max" not in name and name.startswith("iPhone"):
+                      key = (runtime, name)
+                      if best is None or key > best[0]:
+                          best = (key, d["udid"])
+          print(best[1] if best else "")
+          ')
+          if [ -z "$UDID" ]; then echo "no iPhone Pro simulator"; xcrun simctl list devices available; exit 1; fi
+          xcrun simctl list devices available | grep "$UDID"
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+
+      - name: Capture screenshots
+        run: |
+          APP=build/Build/Products/Debug-iphonesimulator/iPAN.app
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl privacy "$UDID" grant camera com.zongruichd.ipan || true
+          xcrun simctl privacy "$UDID" grant photos-add com.zongruichd.ipan || true
+          xcrun simctl ui "$UDID" appearance dark || true
+          mkdir -p snapshots
+          for state in default tools styles palette; do
+            xcrun simctl terminate "$UDID" com.zongruichd.ipan || true
+            xcrun simctl launch "$UDID" com.zongruichd.ipan -iPANUIState "$state"
+            sleep 7
+            xcrun simctl io "$UDID" screenshot "snapshots/$state.png"
+          done
+          ls -l snapshots
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-snapshots
+          path: |
+            snapshots
+            sim-build.log
+          if-no-files-found: ignore

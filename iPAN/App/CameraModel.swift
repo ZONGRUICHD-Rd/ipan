@@ -131,6 +131,10 @@ final class CameraModel: ObservableObject {
         }
 
         observeInterfaceOrientation()
+        if SimulatorDemo.isActive {
+            camera.frames.update(SimulatorDemo.frame())
+            thumbnail = SimulatorDemo.thumbnail()
+        }
         if safeMode {
             showToast("上次启动异常，已暂时关闭 Camera Control 与光圈", warning: true)
         } else {
