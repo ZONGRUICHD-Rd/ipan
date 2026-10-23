@@ -104,13 +104,13 @@ jobs:
               cat "release-notes/$APP_VERSION.md"
               echo
             else
-              echo "## iPAN $APP_VERSION（构建 $BUILD_NUMBER）"
+              echo "## iPAN ${APP_VERSION}（构建 ${BUILD_NUMBER}）"
               echo
             fi
             echo "- 分支：\`${GITHUB_REF_NAME}\` · 提交：${GITHUB_SHA}"
             echo "- 构建：Xcode $(xcodebuild -version | head -n 1 | awk '{print $2}')，未签名，安装前需自行签名"
             echo
-            echo "### 提交记录${PREV_TAG:+（自 $PREV_TAG 起）}"
+            echo "### 提交记录${PREV_TAG:+（自 ${PREV_TAG} 起）}"
             echo
             git log --no-merges --format='- %s' "$RANGE"
           } > release-notes.md
@@ -119,7 +119,7 @@ jobs:
           TITLE="iPAN $APP_VERSION"
           if [ "$RELEASE_KIND" = "prerelease" ]; then
             FLAGS=(--prerelease)
-            TITLE="iPAN $APP_VERSION（构建 $BUILD_NUMBER）"
+            TITLE="iPAN ${APP_VERSION}（构建 ${BUILD_NUMBER}）"
           fi
           gh release create "$RELEASE_TAG" "iPAN-${RELEASE_TAG#v}-unsigned.ipa" \
             --repo "$GITHUB_REPOSITORY" \
