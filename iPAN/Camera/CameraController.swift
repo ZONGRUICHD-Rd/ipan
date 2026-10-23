@@ -48,6 +48,10 @@ final class CameraController: NSObject, ObservableObject {
     @Published private(set) var liveAperture: Float = 0
     /// 锁定的光圈（nil = 自动）
     @Published private(set) var lockedAperture: Float?
+    /// 曝光补偿（EV）。Camera Control 的系统曝光滑块改动时也会同步过来
+    @Published private(set) var exposureBias: Float = 0
+    /// 曝光补偿范围（取当前镜头范围与 ±2EV 的交集）
+    @Published private(set) var exposureBiasRange: ClosedRange<Float> = -2...2
 
     let session = AVCaptureSession()
     let frames = FrameStore()
@@ -71,6 +75,9 @@ final class CameraController: NSObject, ObservableObject {
     private var requestedAperture: Float?
     private var currentApertureSupport: VariableAperture.Support?
     private var apertureObservation: NSKeyValueObservation?
+    private var biasObservation: NSKeyValueObservation?
+    /// 只在 sessionQueue 上读写：用户设定的曝光补偿，换镜头后重新应用
+    private var requestedBias: Float = 0
     /// 由 setAperture 第一次调用打开；安全模式下保持关闭
     private var apertureEnabled = false
 
@@ -205,6 +212,7 @@ final class CameraController: NSObject, ObservableObject {
             device.unlockForConfiguration()
         } catch {}
         observeAperture(of: device, support: support)
+        applyExposureBias(to: device)
         return nil
     }
 
@@ -402,6 +410,37 @@ final class CameraController: NSObject, ObservableObject {
             self.liveAperture = initial
         }
     }
+
+    // MARK: 曝光补偿
+
+    func setExposureBias(_ value: Float) {
+        sessionQueue.async {
+            self.requestedBias = value
+            if let device = self.currentDevice { self.applyExposureBias(to: device) }
+        }
+    }
+
+    /// sessionQueue 上调用
+    private func applyExposureBias(to device: AVCaptureDevice) {
+        let lower = max(-2, device.minExposureTargetBias)
+        let upper = min(2, device.maxExposureTargetBias)
+        guard lower < upper else { return }
+        let value = min(upper, max(lower, requestedBias))
+        if (try? device.lockForConfiguration()) != nil {
+            device.setExposureTargetBias(value, completionHandler: nil)
+            device.unlockForConfiguration()
+        }
+        if biasObservation == nil || biasDevice !== device {
+            biasDevice = device
+            biasObservation = device.observe(\.exposureTargetBias, options: [.initial, .new]) { [weak self] d, _ in
+                let bias = d.exposureTargetBias
+                DispatchQueue.main.async { self?.exposureBias = bias }
+            }
+        }
+        DispatchQueue.main.async { self.exposureBiasRange = lower...upper }
+    }
+
+    private weak var biasDevice: AVCaptureDevice?
 
     // MARK: 方向
 

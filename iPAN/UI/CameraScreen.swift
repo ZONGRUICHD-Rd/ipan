@@ -78,9 +78,8 @@ struct CameraLayout {
     /// 取景窗口可用的区域（点）
     var bandRegion: CGRect {
         if isLandscape {
-            let minX = leading + Self.leftRail + 8
-            let maxX = rightRailsMinX - 6
-            return CGRect(x: minX, y: top + 22, width: max(0, maxX - minX), height: max(0, size.height - top - bottom - 30))
+            // 横屏：哈苏 XPAN 机身的取景窗
+            return XPanBodyLayout(size: size).windowRegion
         }
         let minY = top + Self.topBar + 22
         let maxY = size.height - bottom - Self.bottomControls
@@ -140,6 +139,8 @@ private struct CameraScreenContent: View {
     @Namespace private var shotNamespace
     @State private var showPalette = false
     @State private var showAperture = false
+    @State private var showTools = false
+    @State private var showStylePicker = false
     @State private var showSettings = false
     @State private var showReview = false
 
@@ -151,11 +152,11 @@ private struct CameraScreenContent: View {
             ZStack(alignment: .topLeading) {
                 Color.black
 
-                viewfinder(screen: proxy.size)
+                viewfinder(screen: proxy.size, landscape: layout.isLandscape)
 
                 Group {
                     if layout.isLandscape {
-                        landscapeControls(layout)
+                        xpanControls(layout)
                     } else {
                         portraitControls(layout)
                     }
@@ -220,22 +221,36 @@ private struct CameraScreenContent: View {
         }
     }
 
-    private func viewfinder(screen: CGSize) -> some View {
-        ZStack(alignment: .topLeading) {
+    private func viewfinder(screen: CGSize, landscape: Bool) -> some View {
+        let bandFrame = CGRect(x: model.band.minX * screen.width, y: model.band.minY * screen.height,
+                               width: model.band.width * screen.width, height: model.band.height * screen.height)
+        return ZStack(alignment: .topLeading) {
             CameraPreview(frames: camera.frames, state: model.previewState, renderer: model.renderer)
                 .blur(radius: camera.isSwitching ? 22 : 0)
                 .animation(.easeInOut(duration: 0.22), value: camera.isSwitching)
                 .allowsHitTesting(false)
 
-            PanoramaMask(band: model.band, caption: caption,
-                         mainCoverage: model.mode == .stitch ? model.mainCoverage : nil)
+            if landscape {
+                // 哈苏 XPAN 机身：取景窗就是 65:24 画幅
+                XPanBodyBackground(layout: XPanBodyLayout(size: screen), window: bandFrame)
+                RangefinderFrameLines(window: bandFrame)
+                if model.mode == .stitch {
+                    let c = model.mainCoverage
+                    RoundedRectangle(cornerRadius: 3)
+                        .stroke(OPPOStyle.accent.opacity(0.85), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                        .frame(width: bandFrame.width * c.width, height: bandFrame.height * c.height)
+                        .position(x: bandFrame.midX, y: bandFrame.midY)
+                        .allowsHitTesting(false)
+                }
+            } else {
+                PanoramaMask(band: model.band, caption: caption,
+                             mainCoverage: model.mode == .stitch ? model.mainCoverage : nil)
+            }
 
             DevelopOverlay(phase: model.developPhase, image: model.developImage, progress: model.developProgress,
                            band: model.band, namespace: shotNamespace)
 
             // 只在 65:24 窗口内点击对焦：按钮都在窗口外，不会再和对焦冲突
-            let bandFrame = CGRect(x: model.band.minX * screen.width, y: model.band.minY * screen.height,
-                                   width: model.band.width * screen.width, height: model.band.height * screen.height)
             Color.clear
                 .contentShape(Rectangle())
                 .frame(width: bandFrame.width, height: bandFrame.height)
@@ -245,6 +260,19 @@ private struct CameraScreenContent: View {
                     model.focus(at: CGPoint(x: x, y: y), screen: screen)
                 }
                 .offset(x: bandFrame.minX, y: bandFrame.minY)
+
+            if landscape && camera.authorization == .authorized {
+                // 取景窗左侧：曝光补偿刻度尺
+                EVRuler(value: camera.exposureBias, range: camera.exposureBiasRange) { camera.setExposureBias($0) }
+                    .frame(width: 92, height: bandFrame.height * 0.76)
+                    .offset(x: bandFrame.minX + 16, y: bandFrame.minY + bandFrame.height * 0.12)
+                // 取景窗右侧：变焦圆钮
+                if model.mode == .ipan {
+                    XPanZoomChips(focals: FocalLength.all, selected: settings.focal) { model.select(focal: $0) }
+                        .position(x: bandFrame.maxX - 34, y: bandFrame.midY)
+                        .transition(.opacity)
+                }
+            }
 
             if let point = model.focusPoint {
                 OPPOFocusIndicator()
@@ -287,43 +315,138 @@ private struct CameraScreenContent: View {
 
     // MARK: 横屏控件
 
-    private func landscapeControls(_ layout: CameraLayout) -> some View {
-        let railHeight = layout.size.height - layout.top - layout.bottom
+    /// 横屏：哈苏 XPAN 机身上的按键
+    private func xpanControls(_ layout: CameraLayout) -> some View {
+        let chrome = XPanBodyLayout(size: layout.size)
+        let d = chrome.buttonDiameter
+        let spring = Animation.spring(response: 0.4, dampingFraction: 0.85)
         return ZStack(alignment: .topLeading) {
-            // 左：工具栏（液态玻璃，竖排）
-            toolRail(axis: .vertical)
-                .frame(width: CameraLayout.leftRail, height: railHeight)
-                .position(x: layout.leading + CameraLayout.leftRail / 2, y: layout.top + railHeight / 2)
+            // 左上：设置
+            BodyRoundButton(systemName: "gearshape", diameter: d) { showSettings = true }
+                .position(chrome.settingsCenter)
 
-            // 右：焦段 · 模式 · 快门列（OPPO）
-            HStack(spacing: 0) {
-                Group {
-                    if model.mode == .ipan {
-                        OPPOFocalSelector(focals: FocalLength.all, selected: settings.focal, axis: .vertical) { model.select(focal: $0) }
-                            .transition(.opacity)
-                    } else {
-                        Color.clear
+            // 左下：工具（调色盘 / 光圈 / 水印 / 暗角），向右展开
+            BodyRoundButton(systemName: "camera.filters", diameter: d,
+                            active: showTools || !settings.palette.isIdentity || camera.lockedAperture != nil) {
+                withAnimation(spring) {
+                    showTools.toggle()
+                    if showTools { showStylePicker = false }
+                }
+            }
+            .position(chrome.toolsCenter)
+            if showTools {
+                // 宽度为 0 的锚点框 + 左对齐：菜单从工具钮右侧开始向右展开
+                toolsMenu
+                    .fixedSize()
+                    .frame(width: 0, alignment: .leading)
+                    .position(x: chrome.toolsCenter.x + d / 2 + 12, y: chrome.toolsCenter.y)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+
+            // XPAN 标识：点按切换 iPAN / 双摄拼接
+            XPanBadge(mode: model.mode) {
+                model.select(mode: model.mode == .ipan ? .stitch : .ipan)
+            }
+            .frame(width: chrome.badge.width, height: chrome.badge.height)
+            .position(x: chrome.badge.midX, y: chrome.badge.midY)
+
+            // 右上：色彩风格卡片，点按向左展开选择
+            Button {
+                withAnimation(spring) {
+                    showStylePicker.toggle()
+                    if showStylePicker { showTools = false }
+                }
+            } label: {
+                StyleTile(film: settings.filmMode, size: chrome.tileSize, selected: showStylePicker)
+            }
+            .buttonStyle(.plain)
+            .position(chrome.styleTileCenter)
+            if showStylePicker {
+                StylePickerStrip(selected: settings.filmMode, tileSize: chrome.tileSize) { film in
+                    model.setFilm(film)
+                    withAnimation(spring) { showStylePicker = false }
+                }
+                .fixedSize()
+                .frame(width: 0, alignment: .trailing)
+                .position(x: chrome.styleTileCenter.x - chrome.tileSize / 2 - 12, y: chrome.styleTileCenter.y)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+
+            // 右中：金属快门
+            MetalShutterButton(diameter: chrome.shutterDiameter, isBusy: model.processingCount > 0, isEnabled: model.canShoot) {
+                withAnimation(spring) { showTools = false; showStylePicker = false }
+                model.shutter()
+            }
+            .position(chrome.shutterCenter)
+
+            // 右下：缩略图
+            Button {
+                if model.lastShot != nil { showReview = true }
+            } label: {
+                ZStack {
+                    ThumbnailTile(image: nil, size: chrome.tileSize)
+                    if model.developPhase == .idle, let thumb = model.thumbnail {
+                        Image(uiImage: thumb)
+                            .resizable()
+                            .scaledToFill()
+                            .matchedGeometryEffect(id: "shot", in: shotNamespace)
+                            .frame(width: chrome.tileSize - 8, height: chrome.tileSize - 8)
+                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                     }
                 }
-                .frame(width: CameraLayout.focalRail)
-
-                OPPOModeCarousel(modes: CaptureMode.allCases, selected: model.mode, axis: .vertical) { model.select(mode: $0) }
-                    .frame(width: CameraLayout.modeRail, height: min(railHeight, 220))
-
-                VStack {
-                    filmButton
-                    Spacer()
-                    shutter
-                    Spacer()
-                    thumbnailButton
-                }
-                .padding(.vertical, 8)
-                .frame(width: CameraLayout.controlRail, height: railHeight)
             }
-            .frame(width: layout.rightRailsWidth, height: railHeight)
-            .position(x: layout.rightRailsMinX + layout.rightRailsWidth / 2, y: layout.top + railHeight / 2)
+            .buttonStyle(.plain)
+            .position(chrome.thumbnailCenter)
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: model.mode)
+        .frame(width: layout.size.width, height: layout.size.height, alignment: .topLeading)
+    }
+
+    /// 工具菜单：调色盘、光圈（支持时）、水印、暗角
+    private var toolsMenu: some View {
+        HStack(spacing: 16) {
+            Button {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    showPalette.toggle()
+                    if showPalette { showAperture = false }
+                }
+            } label: {
+                Image(systemName: "paintpalette")
+                    .foregroundStyle(settings.palette.isIdentity && !showPalette ? .white : OPPOStyle.accent)
+            }
+            if camera.apertureSupport != nil {
+                Button {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                        showAperture.toggle()
+                        if showAperture { showPalette = false }
+                    }
+                } label: {
+                    Text(camera.lockedAperture.map { "ƒ" + VariableAperture.label($0) } ?? "ƒA")
+                        .font(.system(size: 14, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(camera.lockedAperture != nil || showAperture ? OPPOStyle.accent : .white)
+                }
+            }
+            Button {
+                settings.watermarkEnabled.toggle()
+                model.showToast(settings.watermarkEnabled ? "水印：\(settings.watermarkTemplate)" : "水印已关闭")
+            } label: {
+                Image(systemName: settings.watermarkEnabled ? "signature" : "text.badge.xmark")
+                    .foregroundStyle(settings.watermarkEnabled ? OPPOStyle.accent : .white)
+            }
+            Button {
+                settings.vignette.toggle()
+                model.syncPreview()
+            } label: {
+                Image(systemName: settings.vignette ? "circle.dashed.inset.filled" : "circle.dashed")
+                    .foregroundStyle(settings.vignette ? OPPOStyle.accent : .white)
+            }
+        }
+        .font(.system(size: 18, weight: .medium))
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .glassEffect(.regular.interactive(), in: Capsule())
     }
 
     // MARK: 竖屏控件（iPad / 竖向窗口）
